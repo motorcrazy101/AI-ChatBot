@@ -56,6 +56,55 @@ A Node.js service that manages multiple Discord bots, each tied to a unique Kind
    npm start
    ```
 
+# Docker version (production)
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/KindroidAI/Kindroid-discord.git
+   cd Kindroid-discord
+   ```
+
+2. **Build the image**
+
+   ```bash
+   docker build -t kindroid-bot .
+   ```
+
+3. **Run the image with environment variables**
+
+   ```bash
+   docker run -d -e KINDROID_API_KEY=your_kindroid_api_key_here -e SHARED_AI_CODE_1=your_shared_code_1_here -e BOT_TOKEN_1=your_discord_bot_token_1_here -e ENABLE_FILTER_1=false kindroid-bot:latest
+   ```
+   If you have a .env file
+
+   ```bash
+   docker run -d --env-file path_to_env_file kindroid-bot:latest
+   ```
+
+   Or create a compose file
+
+   ```bash
+   touch compose.yml
+   ```
+
+   ```yaml
+   services:
+      discord:
+         image: kindroid-bot
+         container_name: container_name
+         restart: always
+         environment:
+            KINDROID_API_KEY: your_kindroid_api_key_here
+            SHARED_AI_CODE_1: your_shared_code_1_here
+            BOT_TOKEN_1: your_discord_bot_token_1_here
+            ENABLE_FILTER_1: false
+   ```
+
+   ```bash
+   docker compose up
+   ```
+
 ## Configuration
 
 Use environment variables to configure your bots. The .env.example file shows usage:

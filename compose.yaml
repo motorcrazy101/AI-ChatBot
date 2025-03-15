@@ -1,0 +1,10 @@
+services:
+  discord:
+    image: kindroid-bot:latest
+    container_name: container_name
+    restart: on-failure:5
+    environment:
+      KINDROID_API_KEY: your_kindroid_api_key_here
+      SHARED_AI_CODE_1: your_shared_code_1_here
+      BOT_TOKEN_1: your_discord_bot_token_1_here
+      ENABLE_FILTER_1: false
