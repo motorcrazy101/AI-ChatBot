@@ -215,7 +215,7 @@ async function createDiscordClientForBot(
     } catch (error) {
       console.error(`[Bot ${botConfig.id}] Error:`, error);
       const errorMessage =
-        "Beep boop, something went wrong. Please contact the Kindroid owner if this keeps up!";
+        "The Asylum Warden put a gag in her mounth Please contact the Asylum Warden (SelfCenteredDouchebag) if this response pops up!";
       if (isMentioned) {
         await message.reply(errorMessage);
       } else if (
@@ -298,7 +298,7 @@ async function handleDirectMessage(
   } catch (error) {
     console.error(`[Bot ${botConfig.id}] DM Error:`, error);
     await message.reply(
-      "Beep boop, something went wrong. Please contact the Kindroid owner if this keeps up!"
+      "The Asylum Warden put a gag in her mounth Please contact the Asylum Warden (SelfCenteredDouchebag) if this response pops up!"
     );
   }
 }
