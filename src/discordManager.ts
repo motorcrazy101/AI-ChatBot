@@ -175,6 +175,7 @@ async function createDiscordClientForBot(
     // Ignore if the bot is not mentioned or referenced
     if (!isMentioned && !containsBotName) return;
 
+    let typingInterval: NodeJS.Timeout | undefined;
     try {
       // Show typing indicator
       if (
@@ -182,6 +183,21 @@ async function createDiscordClientForBot(
         message.channel instanceof DMChannel
       ) {
         await message.channel.sendTyping();
+
+        // Keep the typing indicator alive while we wait for Kindroid to respond
+        typingInterval = setInterval(() => {
+          if (
+            message.channel instanceof BaseGuildTextChannel ||
+            message.channel instanceof DMChannel
+          ) {
+            message.channel.sendTyping().catch((err) => {
+              console.error(
+                `[Bot ${botConfig.id}] Failed to refresh typing indicator:`,
+                err
+              );
+            });
+          }
+        }, 5000);
       }
 
       // Fetch recent conversation with caching
@@ -198,6 +214,8 @@ async function createDiscordClientForBot(
         botConfig.enableFilter
       );
 
+      clearInterval(typingInterval);
+
       // If rate limited, silently ignore
       if (aiResult.type === "rate_limited") {
         return;
@@ -213,6 +231,7 @@ async function createDiscordClientForBot(
         await message.channel.send(aiResult.reply);
       }
     } catch (error) {
+      clearInterval(typingInterval);
       console.error(`[Bot ${botConfig.id}] Error:`, error);
       const errorMessage =
         "The Asylum Warden put a gag in her mounth Please contact the Asylum Warden (SelfCenteredDouchebag) if this response pops up!";
@@ -268,10 +287,23 @@ async function handleDirectMessage(
     lastMessageTime: Date.now(),
   });
 
+  let typingInterval: NodeJS.Timeout | undefined;
   try {
     // Show typing indicator
     if (message.channel instanceof DMChannel) {
       await message.channel.sendTyping();
+
+      // Keep the typing indicator alive while we wait for Kindroid to respond
+      typingInterval = setInterval(() => {
+        if (message.channel instanceof DMChannel) {
+          message.channel.sendTyping().catch((err) => {
+            console.error(
+              `[Bot ${botConfig.id}] Failed to refresh typing indicator:`,
+              err
+            );
+          });
+        }
+      }, 5000);
 
       // Fetch recent conversation
       const conversationArray = await ephemeralFetchConversation(
@@ -287,6 +319,8 @@ async function handleDirectMessage(
         botConfig.enableFilter
       );
 
+      clearInterval(typingInterval);
+
       // If rate limited, silently ignore
       if (aiResult.type === "rate_limited") {
         return;
@@ -296,6 +330,7 @@ async function handleDirectMessage(
       await message.reply(aiResult.reply);
     }
   } catch (error) {
+    clearInterval(typingInterval);
     console.error(`[Bot ${botConfig.id}] DM Error:`, error);
     await message.reply(
       "The Asylum Warden put a gag in her mounth Please contact the Asylum Warden (SelfCenteredDouchebag) if this response pops up!"
