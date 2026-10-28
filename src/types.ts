@@ -18,16 +18,6 @@ export interface KindroidResponse {
   error?: string;
 }
 
-export interface DMConversationCount {
-  count: number;
-  lastMessageTime: number;
-}
-
 export type KindroidAIResult =
-  | {
-      type: "success";
-      reply: string;
-    }
-  | {
-      type: "rate_limited";
-    };
+  | { type: "success"; reply: string }
+  | { type: "rate_limited" };
