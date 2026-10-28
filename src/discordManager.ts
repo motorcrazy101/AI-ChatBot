@@ -111,9 +111,11 @@ async function sendReply(
   // Never let the AI ping @everyone, @here, roles or random users.
   const allowedMentions = { parse: [], repliedUser: true };
 
-  const sent = [await message.reply({ content: chunks[0], allowedMentions })];
+  const sent: Message[] = [];
+  sent.push(await message.reply({ content: chunks[0], allowedMentions }));
   for (const chunk of chunks.slice(1)) {
-    sent.push(await channel.send({ content: chunk, allowedMentions }));
+    const followUp: Message = await channel.send({ content: chunk, allowedMentions });
+    sent.push(followUp);
   }
   return sent;
 }
