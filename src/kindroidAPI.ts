@@ -1,75 +1,65 @@
-import axios, { AxiosError } from "axios";
-import {
-  ConversationMessage,
-  KindroidResponse,
-  KindroidAIResult,
-} from "./types";
+import axios from "axios";
+import { config } from "./config";
+import { ConversationMessage, KindroidResponse, KindroidAIResult } from "./types";
 
 /**
- * Calls the Kindroid AI inference endpoint
- * @param sharedAiCode - shared code for API identification
- * @param conversation - array of conversation messages
- * @param enableFilter - whether to enable NSFW filtering
- * @returns KindroidAIResult indicating success with reply or rate limit
- * @throws Error if the API call fails (except for rate limits)
+ * Turns a display name into a short alphanumeric ID for the
+ * X-Kindroid-Requester header (handles non-ASCII names).
+ */
+function requesterId(username: string): string {
+  return Buffer.from(encodeURIComponent(username))
+    .toString("base64")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 32);
+}
+
+/**
+ * Calls the Kindroid AI inference endpoint.
+ * Returns { type: "rate_limited" } on HTTP 429, throws on any other failure.
  */
 export async function callKindroidAI(
   sharedAiCode: string,
   conversation: ConversationMessage[],
-  enableFilter: boolean = false
+  enableFilter = false
 ): Promise<KindroidAIResult> {
+  if (conversation.length === 0) {
+    throw new Error("Conversation array cannot be empty");
+  }
+
+  const lastUsername = conversation[conversation.length - 1].username;
+
   try {
-    if (conversation.length === 0) {
-      throw new Error("Conversation array cannot be empty");
-    }
-
-    const lastUsername = conversation[conversation.length - 1].username;
-
-    // Encode username to handle non-ASCII characters, then hash to alphanumeric
-    const hashedUsername = Buffer.from(encodeURIComponent(lastUsername))
-      .toString("base64")
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(0, 32); // Limit length to 32 chars
-
-    const response = await axios.post<KindroidResponse>(
-      process.env.KINDROID_INFER_URL!,
+    const { data } = await axios.post<KindroidResponse>(
+      config.kindroidUrl,
+      { share_code: sharedAiCode, conversation, enable_filter: enableFilter },
       {
-        share_code: sharedAiCode,
-        conversation,
-        enable_filter: enableFilter,
-      },
-      {
+        timeout: config.requestTimeoutMs,
         headers: {
-          Authorization: `Bearer ${process.env.KINDROID_API_KEY!}`,
-          "X-Kindroid-Requester": hashedUsername,
+          Authorization: `Bearer ${config.kindroidApiKey}`,
+          "X-Kindroid-Requester": requesterId(lastUsername),
           "Content-Type": "application/json",
         },
       }
     );
 
-    if (!response.data.success) {
-      throw new Error(response.data.error || "API request failed");
+    if (!data.success || typeof data.reply !== "string") {
+      throw new Error(data.error || "Kindroid API returned no reply");
     }
 
-    return {
-      type: "success",
-      reply: response.data.reply.replace(/@(everyone|here)/g, ""),
-    };
+    return { type: "success", reply: data.reply };
   } catch (error) {
-    console.error("Error calling Kindroid AI:", (error as Error).message);
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<KindroidResponse>;
-      if (axiosError.response) {
-        console.error("Response data:", axiosError.response.data);
-        console.error("Response status:", axiosError.response.status);
-        if (axiosError.response.status === 429) {
-          return { type: "rate_limited" };
-        }
-        if (axiosError.response.data?.error) {
-          throw new Error(axiosError.response.data.error);
-        }
+    if (axios.isAxiosError<KindroidResponse>(error)) {
+      const status = error.response?.status;
+      if (status === 429) {
+        console.warn("Kindroid API rate limited (429)");
+        return { type: "rate_limited" };
       }
+      if (error.code === "ECONNABORTED") {
+        throw new Error(`Kindroid API timed out after ${config.requestTimeoutMs}ms`);
+      }
+      const detail = error.response?.data?.error ?? error.message;
+      throw new Error(`Kindroid API error${status ? ` (${status})` : ""}: ${detail}`);
     }
-    throw new Error("Failed to get response from Kindroid AI");
+    throw error;
   }
 }
