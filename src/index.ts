@@ -20,7 +20,9 @@ process.on("unhandledRejection", (reason) => {
 
 async function main(): Promise<void> {
   console.log(`Found ${config.bots.length} bot configuration(s)`);
-  await initChatLog();
+  // Set up chat logging in the background so a slow/unreachable database
+  // can never stop the bots from coming online.
+  void initChatLog();
   const started = await initializeAllBots(config.bots);
 
   if (started === 0) {
