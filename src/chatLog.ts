@@ -11,7 +11,13 @@ import { Pool } from "pg";
  */
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
-const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 5 }) : null;
+const pool = databaseUrl
+  ? new Pool({
+      connectionString: databaseUrl,
+      max: 5,
+      connectionTimeoutMillis: 10_000, // give up instead of hanging if the DB is unreachable
+    })
+  : null;
 let ready = false;
 
 pool?.on("error", (err) => console.error("[chat-log] Database connection error:", err.message));
