@@ -17,6 +17,26 @@ function intFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+function percentFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseFloat(raw);
+  if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+    console.warn(`Ignoring invalid ${name}="${raw}" (must be 0-100), using ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+
+function validTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function fail(message: string): never {
   console.error(`Config error: ${message}`);
   process.exit(1);
@@ -43,6 +63,7 @@ function loadBotConfigs(): BotConfig[] {
       discordBotToken: botToken,
       sharedAiCode,
       enableFilter: process.env[`ENABLE_FILTER_${i}`]?.trim().toLowerCase() === "true",
+      defaultStatus: process.env[`BOT_STATUS_${i}`]?.trim() ?? "",
     });
   }
 
@@ -60,6 +81,12 @@ function loadConfig() {
     fail("No bots configured. Set at least SHARED_AI_CODE_1 and BOT_TOKEN_1");
   }
 
+  let timezone = process.env.TIMEZONE?.trim() || "America/Los_Angeles";
+  if (!validTimezone(timezone)) {
+    console.warn(`Unknown TIMEZONE "${timezone}", using America/Los_Angeles`);
+    timezone = "America/Los_Angeles";
+  }
+
   return {
     kindroidUrl,
     kindroidApiKey,
@@ -72,6 +99,16 @@ function loadConfig() {
     maxBotChain: intFromEnv("MAX_BOT_CHAIN", 3),
     /** Kindroid request timeout. */
     requestTimeoutMs: intFromEnv("KINDROID_TIMEOUT_MS", 60_000),
+    /** Time zone for scheduled posts and the chat log viewer. */
+    timezone,
+    /** Starting values for settings that can be changed later with commands. */
+    defaultChimeChance: percentFromEnv("CHIME_CHANCE", 5),
+    defaultReactionChance: percentFromEnv("REACTION_CHANCE", 10),
+    /** Minimum minutes between random chime-ins in the same channel. */
+    chimeCooldownMinutes: intFromEnv("CHIME_COOLDOWN_MINUTES", 10),
+    /** Password for the chat log web page. Page is off when not set. */
+    logViewerPassword: process.env.LOG_VIEWER_PASSWORD?.trim() || "",
+    port: intFromEnv("PORT", 8080),
   };
 }
 
