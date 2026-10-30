@@ -1,4 +1,5 @@
 import {
+  ApplicationCommandDataResolvable,
   ChannelType,
   ChatInputCommandInteraction,
   Client,
@@ -198,7 +199,10 @@ function buildCommand(name: string, botName: string) {
 export async function registerCommands(client: Client<true>, botConfig: BotConfig): Promise<void> {
   const name = commandName(client);
   try {
-    await client.application.commands.set([buildCommand(name, client.user.displayName).toJSON()]);
+    // The cast works around two copies of Discord's type definitions being
+    // installed at slightly different versions; the data itself is identical.
+    const command = buildCommand(name, client.user.displayName).toJSON() as unknown as ApplicationCommandDataResolvable;
+    await client.application.commands.set([command]);
     console.log(`[${botConfig.id}] Slash command ready: /${name}`);
   } catch (err) {
     console.error(`[${botConfig.id}] Could not register /${name}:`, err);
