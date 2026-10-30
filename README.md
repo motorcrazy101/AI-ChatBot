@@ -1,88 +1,76 @@
 # Kindroid Discord Multi-Bot Manager
 
-Tutorial on how to use this repo: https://docs.kindroid.ai/official-discord-bot-integration
+Based on Kindroid's official bot: https://docs.kindroid.ai/official-discord-bot-integration
 
-A Node.js service that manages multiple Discord bots, each tied to a unique Kindroid AI persona. The system uses just-in-time message fetching to provide conversation context without storing large message logs.
+Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Railway, deployed from this GitHub repo.
 
 ## Features
 
-- **Multi-bot** support: Run multiple Discord bots from a single service
-- **Kindroid AI integration**: Each bot is tied to a unique AI persona (via `SHARED_AI_CODE_n`)
-- **JIT message fetching**: Dynamically grabs the last ~30 messages for context
-- **Caching**: Minimizes redundant Discord API calls
-- **Graceful shutdown**: Bots disconnect on SIGINT/SIGTERM
-- **Configurable NSFW filtering** via environment variables
+- **Talks when called**: say her name, @mention her, reply to her, or DM her
+- **Multi-bot**: add `BOT_TOKEN_2` / `SHARED_AI_CODE_2` (and so on) to run more Kindroids; they can talk to each other, with a loop limit
+- **Custom status** under her name
+- **Random chime-ins**: she sometimes joins conversations in channels you pick
+- **Emoji reactions**: she sometimes reacts to messages
+- **Welcomes new members** in her own voice
+- **Scheduled posts**: e.g. a good-morning message every day at 8am
+- **Admin slash command** (`/aurora`, named after the bot) to control all of the above
+- **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
-## Prerequisites
+## Settings (Railway → bot service → Variables)
 
-- Node.js 16.x or higher
-- Discord Bot Token(s) from the [Discord Developer Portal](https://discord.com/developers/applications)
-- Kindroid AI API access (API key and share code)
+See `.env.example` for the full list. The main ones:
 
-## Setup
+| Variable | What it is |
+|---|---|
+| `KINDROID_API_KEY` | Your Kindroid API key |
+| `KINDROID_INFER_URL` | `https://api.kindroid.ai/v1/discord-bot` |
+| `SHARED_AI_CODE_1` | The Kindroid's share code |
+| `BOT_TOKEN_1` | Discord bot token |
+| `BOT_STATUS_1` | Optional status, e.g. `Playing in the Asylum` |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`: saves chats and command settings |
+| `LOG_VIEWER_PASSWORD` | Turns on the chat log web page |
+| `TIMEZONE` | For scheduled posts, default `America/Los_Angeles` |
 
-1. **Clone the repository**:
+Never put real keys or tokens in GitHub.
 
-   ```bash
-   git clone https://github.com/KindroidAI/Kindroid-discord.git
-   cd Kindroid-discord
-   ```
+## Slash commands
 
-2. Install dependencies:
+Only members with **Manage Server** can see these. Change who can use them in Discord under
+Server Settings → Integrations → the bot.
 
-   ```bash
-   npm install
-   ```
+| Command | What it does |
+|---|---|
+| `/aurora settings` | Show everything that's set |
+| `/aurora stats` | Who talks to her the most (last 30 days) |
+| `/aurora quiet` / `unquiet` | Silence her in this channel / undo |
+| `/aurora block` / `unblock` / `blocklist` | Make her ignore someone |
+| `/aurora status` | Change her status (empty text clears it) |
+| `/aurora chimein on` / `off` / `chance` | Random chime-ins in this channel |
+| `/aurora reactions chance` / `emojis` | How often she reacts, and with which emojis |
+| `/aurora welcome on` / `off` / `test` | Welcome new members in a channel |
+| `/aurora schedule add` / `list` / `remove` / `test` | Scheduled posts |
 
-3. Copy and configure .env:
+## Discord Developer Portal
 
-   ```bash
-   cp .env.example .env
-   ```
+Under **Bot → Privileged Gateway Intents**:
 
-4. Fill in your KINDROID_API_KEY, KINDROID_INFER_URL, and bot tokens (BOT_TOKEN_n).
-   Provide SHARED_AI_CODE_n for each bot's AI persona.
+- **Message Content Intent**: required
+- **Server Members Intent**: needed only for welcoming new members (the bot still runs without it)
 
-5. Run in development mode:
+## Chat log web page
 
-   ```bash
-   npm run dev
-   ```
+1. Set `LOG_VIEWER_PASSWORD` in Railway.
+2. Bot service → **Settings → Networking → Generate Domain**.
+3. Open that address and sign in with any username and your password.
 
-   For production:
+## Running locally (optional)
 
-   ```bash
-   npm run build
-   npm start
-   ```
-
-## Configuration
-
-Use environment variables to configure your bots. The .env.example file shows usage:
-
-- KINDROID_INFER_URL: The Kindroid AI API endpoint, and should not change
-- KINDROID_API_KEY: Your Kindroid AI API key
-- SHARED_AI_CODE_n: The share code to identify which AI persona to use for the n-th bot
-- BOT_TOKEN_n: Discord bot token for the n-th bot
-- ENABLE_FILTER_n: (Optional) true or false to enable NSFW filtering for the n-th bot
-
-You can create as many bots as you want by incrementing the number (\_1, \_2, \_3, etc.).
-
-## Error Handling
-
-- Failed bot initialization is logged; other bots still initialize
-- Conversation fetch failures are caught and logged
-- API call errors log diagnostic info and return a friendly user message
-- SIGINT or SIGTERM triggers a graceful shutdown of all bots
-
-## Contributing
-
-1. Fork this repository
-2. Create your feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add some amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+```bash
+npm install
+cp .env.example .env   # fill in your values
+npm run dev
+```
 
 ## License
 
-This project is licensed under the MIT License.
+MIT. See `LICENSE`.
