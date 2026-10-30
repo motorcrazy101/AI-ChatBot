@@ -1,6 +1,8 @@
 import { config } from "./config";
+import { closeDb } from "./db";
 import { initializeAllBots, shutdownAllBots } from "./discordManager";
-import { closeChatLog, initChatLog } from "./chatLog";
+import { startLogViewer } from "./logViewer";
+import { loadAllSettings } from "./settings";
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
@@ -8,7 +10,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`\nReceived ${signal}. Shutting down...`);
   await shutdownAllBots();
-  await closeChatLog();
+  await closeDb();
   process.exit(0);
 }
 
@@ -20,11 +22,13 @@ process.on("unhandledRejection", (reason) => {
 
 async function main(): Promise<void> {
   console.log(`Found ${config.bots.length} bot configuration(s)`);
-  // Set up chat logging in the background so a slow/unreachable database
-  // can never stop the bots from coming online.
-  void initChatLog();
-  const started = await initializeAllBots(config.bots);
 
+  // Connect the database and load saved settings in the background so a
+  // slow/unreachable database can never stop the bots from coming online.
+  void loadAllSettings(config.bots.map((bot) => bot.id));
+  startLogViewer();
+
+  const started = await initializeAllBots(config.bots);
   if (started === 0) {
     console.error("No bots could log in. Check your BOT_TOKEN values.");
     process.exit(1);
