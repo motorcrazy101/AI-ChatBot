@@ -1,66 +1,11 @@
 import { Message } from "discord.js";
-import { Pool } from "pg";
+import { isDbReady, pool } from "./db";
 
 /**
- * Saves every conversation the bot takes part in to Postgres:
- * the message that triggered it ("incoming") and its reply ("outgoing").
- *
- * Turned on by setting DATABASE_URL (on Railway: ${{Postgres.DATABASE_URL}}).
- * If it's missing or the database is down, the bot keeps chatting normally
- * and just prints a warning — logging never breaks replies.
+ * Saves every conversation the bot takes part in to the chat_logs table:
+ * the message that triggered it ("incoming") and its replies ("outgoing").
+ * Also prints a short line to the Railway logs. Logging never breaks replies.
  */
-
-const databaseUrl = process.env.DATABASE_URL?.trim();
-const pool = databaseUrl
-  ? new Pool({
-      connectionString: databaseUrl,
-      max: 5,
-      connectionTimeoutMillis: 10_000, // give up instead of hanging if the DB is unreachable
-    })
-  : null;
-let ready = false;
-
-pool?.on("error", (err) => console.error("[chat-log] Database connection error:", err.message));
-
-const CREATE_TABLE = `
-  CREATE TABLE IF NOT EXISTS chat_logs (
-    id           BIGSERIAL PRIMARY KEY,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    bot_id       TEXT NOT NULL,
-    bot_name     TEXT,
-    direction    TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
-    is_dm        BOOLEAN NOT NULL,
-    guild_id     TEXT,
-    guild_name   TEXT,
-    channel_id   TEXT NOT NULL,
-    channel_name TEXT,
-    user_id      TEXT NOT NULL,
-    user_name    TEXT NOT NULL,
-    message_id   TEXT,
-    content      TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS chat_logs_channel_time ON chat_logs (channel_id, created_at);
-  CREATE INDEX IF NOT EXISTS chat_logs_user_time ON chat_logs (user_id, created_at);
-`;
-
-/** Creates the chat_logs table if needed. Call once at startup. */
-export async function initChatLog(): Promise<void> {
-  if (!pool) {
-    console.warn("[chat-log] DATABASE_URL not set — chats will NOT be saved.");
-    return;
-  }
-  try {
-    await pool.query(CREATE_TABLE);
-    ready = true;
-    console.log("[chat-log] Connected to database — chats will be saved to chat_logs.");
-  } catch (err) {
-    console.error("[chat-log] Could not set up database, chats will NOT be saved:", (err as Error).message);
-  }
-}
-
-export async function closeChatLog(): Promise<void> {
-  await pool?.end().catch(() => undefined);
-}
 
 function displayName(msg: Message): string {
   return msg.member?.displayName ?? msg.author.displayName;
@@ -90,7 +35,7 @@ async function save(entry: LogEntry): Promise<void> {
       : `${entry.botName} → ${entry.user.name}`;
   console.log(`[chat] [${where}] ${arrow}: ${entry.content.slice(0, 200)}`);
 
-  if (!pool || !ready) return;
+  if (!pool || !isDbReady()) return;
   try {
     await pool.query(
       `INSERT INTO chat_logs
@@ -143,5 +88,22 @@ export function logOutgoing(
     message: reply,
     user: { id: userMessage.author.id, name: displayName(userMessage) },
     content: reply.content,
+  });
+}
+
+/** Log a post the bot made on its own (chime-in, welcome, scheduled post). */
+export function logBotPost(
+  botId: string,
+  botName: string,
+  post: Message,
+  kind: "chime-in" | "welcome" | "scheduled"
+): void {
+  void save({
+    botId,
+    botName,
+    direction: "outgoing",
+    message: post,
+    user: { id: "0", name: `(${kind})` },
+    content: post.content,
   });
 }
