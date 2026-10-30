@@ -1,26 +1,33 @@
 import {
   ChannelType,
   Client,
-  DMChannel,
-  GuildTextBasedChannel,
   GatewayIntentBits,
   Message,
   Partials,
-  PermissionFlagsBits,
 } from "discord.js";
 import { config } from "./config";
 import { botChainTooLong, pruneChains, recordMessage } from "./botChain";
-import { logIncoming, logOutgoing } from "./chatLog";
-import { callKindroidAI } from "./kindroidAPI";
-import { fetchConversation } from "./messageFetch";
+import { logBotPost, logIncoming, logOutgoing } from "./chatLog";
+import { handleCommand, registerCommands } from "./commands";
+import { applyStatus, parseStatus } from "./presence";
+import {
+  botDisplayName,
+  canPostIn,
+  generateReply,
+  randomPercent,
+  ReplyChannel,
+  sendText,
+  startTyping,
+} from "./respond";
+import { startScheduler } from "./scheduler";
+import { getSettings, settingsLoaded } from "./settings";
+import { welcomeMember } from "./welcome";
 import { BotConfig } from "./types";
-
-const DISCORD_MAX_LENGTH = 2000;
-const TYPING_REFRESH_MS = 8000; // Discord's typing indicator lasts ~10s
 
 const activeBots = new Map<string, Client>();
 
-type ReplyChannel = GuildTextBasedChannel | DMChannel;
+/** Last random chime-in per bot+channel, for the cooldown. */
+const lastChimeIn = new Map<string, number>();
 
 // ---------- helpers ----------
 
@@ -36,40 +43,6 @@ function containsName(text: string, name: string): boolean {
     "iu"
   );
   return pattern.test(text);
-}
-
-/** Splits a long reply into Discord-sized pieces, preferring line/word breaks. */
-function splitMessage(text: string, max = DISCORD_MAX_LENGTH): string[] {
-  const chunks: string[] = [];
-  let rest = text.trim();
-
-  while (rest.length > max) {
-    let cut = rest.lastIndexOf("\n", max);
-    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
-    if (cut < max / 2) cut = max;
-    chunks.push(rest.slice(0, cut).trimEnd());
-    rest = rest.slice(cut).trimStart();
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
-}
-
-function hasRequiredPermissions(message: Message): boolean {
-  const { channel, guild } = message;
-  if (channel.isDMBased()) return true;
-
-  const me = guild?.members.me;
-  if (!me) return false;
-
-  const permissions = channel.permissionsFor(me);
-  const required = [
-    PermissionFlagsBits.ViewChannel,
-    PermissionFlagsBits.ReadMessageHistory,
-    channel.isThread()
-      ? PermissionFlagsBits.SendMessagesInThreads
-      : PermissionFlagsBits.SendMessages,
-  ];
-  return !!permissions?.has(required);
 }
 
 /** Should this bot answer this message? */
@@ -88,36 +61,19 @@ function isAddressedToBot(message: Message, client: Client<true>): boolean {
   return [...names].some((name) => containsName(message.content, name));
 }
 
-/** Shows "Bot is typing..." until the returned stop function is called. */
-function startTyping(channel: ReplyChannel, botId: string): () => void {
-  const send = () =>
-    channel.sendTyping().catch((err) =>
-      console.warn(`[${botId}] Failed to send typing indicator:`, err.message)
-    );
-  void send();
-  const interval = setInterval(send, TYPING_REFRESH_MS);
-  return () => clearInterval(interval);
+/** React to a message with a random emoji from the bot's list. */
+async function reactRandomly(message: Message, botConfig: BotConfig): Promise<void> {
+  const emojis = getSettings(botConfig.id).reactionEmojis;
+  if (emojis.length === 0) return;
+  const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+  await message.react(emoji).catch((err) =>
+    console.warn(`[${botConfig.id}] Could not react with ${emoji}:`, err.message)
+  );
 }
 
-/** Sends text as a reply (first chunk) and follow-up messages for the rest. */
-async function sendReply(
-  message: Message,
-  channel: ReplyChannel,
-  text: string
-): Promise<Message[]> {
-  const chunks = splitMessage(text);
-  if (chunks.length === 0) return [];
-
-  // Never let the AI ping @everyone, @here, roles or random users.
-  const allowedMentions = { parse: [], repliedUser: true };
-
-  const sent: Message[] = [];
-  sent.push(await message.reply({ content: chunks[0], allowedMentions }));
-  for (const chunk of chunks.slice(1)) {
-    const followUp: Message = await channel.send({ content: chunk, allowedMentions });
-    sent.push(followUp);
-  }
-  return sent;
+function chimeInCooldownOver(botId: string, channelId: string): boolean {
+  const last = lastChimeIn.get(`${botId}:${channelId}`) ?? 0;
+  return Date.now() - last > config.chimeCooldownMinutes * 60_000;
 }
 
 // ---------- main handler ----------
@@ -130,44 +86,65 @@ async function handleMessage(
   recordMessage(message); // count our own messages too, for the bot-chain limit
   if (message.author.id === client.user.id) return;
 
+  const settings = getSettings(botConfig.id);
+  if (settings.blockedUsers.includes(message.author.id)) return;
+  if (settings.quietChannels.includes(message.channelId)) return;
+
   if (message.author.bot) {
     // Ignore bots in DMs, and stop endless bot-to-bot conversations.
     if (message.channel.isDMBased()) return;
     if (botChainTooLong(message.channelId, config.maxBotChain)) return;
   }
 
-  if (!isAddressedToBot(message, client)) return;
-  if (!hasRequiredPermissions(message)) return;
-
   if (message.channel.type === ChannelType.GroupDM) return;
   const channel = message.channel as ReplyChannel;
+  if (!canPostIn(channel)) return;
 
-  const botName = message.guild?.members.me?.displayName ?? client.user.displayName;
-  logIncoming(botConfig.id, botName, message);
+  const addressed = isAddressedToBot(message, client);
+
+  // Not talking to her: maybe chime in or react in chime-in channels.
+  let chimingIn = false;
+  if (!addressed) {
+    if (message.author.bot || !message.inGuild()) return;
+    if (!settings.chimeChannels.includes(message.channelId)) return;
+    if (!message.content.trim()) return;
+
+    if (
+      chimeInCooldownOver(botConfig.id, message.channelId) &&
+      randomPercent(settings.chimeChance)
+    ) {
+      chimingIn = true;
+      lastChimeIn.set(`${botConfig.id}:${message.channelId}`, Date.now());
+    } else {
+      if (randomPercent(settings.reactionChance)) await reactRandomly(message, botConfig);
+      return;
+    }
+  }
+
+  const botName = botDisplayName(client, channel);
+  if (!chimingIn) logIncoming(botConfig.id, botName, message);
 
   const stopTyping = startTyping(channel, botConfig.id);
   try {
-    const conversation = await fetchConversation(
-      channel,
-      client.user.id,
-      config.contextMessageLimit
-    );
-    if (conversation.length === 0) return;
-
-    const result = await callKindroidAI(
-      botConfig.sharedAiCode,
-      conversation,
-      botConfig.enableFilter
-    );
-
+    const reply = await generateReply(client, botConfig, channel);
     stopTyping();
-    if (result.type === "rate_limited") return;
+    if (!reply) return;
 
-    const sent = await sendReply(message, channel, result.reply);
-    for (const reply of sent) logOutgoing(botConfig.id, botName, reply, message);
+    if (chimingIn) {
+      const sent = await sendText(channel, reply);
+      for (const post of sent) logBotPost(botConfig.id, botName, post, "chime-in");
+      return;
+    }
+
+    const sent = await sendText(channel, reply, { replyTo: message });
+    for (const post of sent) logOutgoing(botConfig.id, botName, post, message);
+
+    // Sometimes add a reaction on top of the reply.
+    if (randomPercent(settings.reactionChance)) await reactRandomly(message, botConfig);
   } catch (error) {
     stopTyping();
     console.error(`[${botConfig.id}] Error handling message ${message.id}:`, error);
+    if (chimingIn) return; // nobody asked, so don't post an error
     await message
       .reply({ content: config.errorMessage, allowedMentions: { parse: [] } })
       .catch((err) =>
@@ -180,19 +157,39 @@ async function handleMessage(
 
 // ---------- lifecycle ----------
 
-async function createBot(botConfig: BotConfig): Promise<Client> {
+const BASE_INTENTS = [
+  GatewayIntentBits.Guilds,
+  GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.GuildMessageReactions,
+  GatewayIntentBits.MessageContent,
+  GatewayIntentBits.DirectMessages,
+];
+
+function isDisallowedIntentsError(error: unknown): boolean {
+  const err = error as { code?: unknown; message?: unknown };
+  return (
+    err?.code === "DisallowedIntents" ||
+    (typeof err?.message === "string" && /disallowed intents|privileged intent/i.test(err.message))
+  );
+}
+
+function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent,
-      GatewayIntentBits.DirectMessages,
-    ],
+    intents: withMembers ? [...BASE_INTENTS, GatewayIntentBits.GuildMembers] : BASE_INTENTS,
     partials: [Partials.Channel, Partials.Message],
   });
 
   client.once("ready", (ready) => {
     console.log(`[${botConfig.id}] Logged in as ${ready.user.tag}`);
+
+    void registerCommands(ready, botConfig);
+    startScheduler(client, botConfig);
+
+    // Apply the status once saved settings are loaded.
+    void settingsLoaded().then(() => {
+      const saved = getSettings(botConfig.id).status;
+      applyStatus(ready, saved ?? parseStatus(botConfig.defaultStatus));
+    });
   });
 
   client.on("messageCreate", (message) => {
@@ -202,11 +199,45 @@ async function createBot(botConfig: BotConfig): Promise<Client> {
     );
   });
 
+  client.on("interactionCreate", (interaction) => {
+    if (!client.isReady() || !interaction.isChatInputCommand()) return;
+    handleCommand(interaction, client, botConfig).catch((err) =>
+      console.error(`[${botConfig.id}] Command error:`, err)
+    );
+  });
+
+  client.on("guildMemberAdd", (member) => {
+    if (!client.isReady()) return;
+    if (member.user.bot) return;
+    welcomeMember(member, client, botConfig).catch((err) =>
+      console.error(`[${botConfig.id}] Welcome failed:`, err)
+    );
+  });
+
   client.on("error", (error) => {
     console.error(`[${botConfig.id}] Client error:`, error);
   });
 
-  await client.login(botConfig.discordBotToken);
+  return client;
+}
+
+async function createBot(botConfig: BotConfig): Promise<Client> {
+  // Welcoming new members needs the "Server Members Intent" switched on in
+  // the Discord Developer Portal. If it isn't, log in without it instead of
+  // failing, and explain how to turn it on.
+  let client = buildClient(botConfig, true);
+  try {
+    await client.login(botConfig.discordBotToken);
+  } catch (error) {
+    if (!isDisallowedIntentsError(error)) throw error;
+    console.warn(
+      `[${botConfig.id}] "Server Members Intent" is off in the Discord Developer Portal, ` +
+        "so welcoming new members is disabled. Turn it on under Bot → Privileged Gateway Intents."
+    );
+    await client.destroy();
+    client = buildClient(botConfig, false);
+    await client.login(botConfig.discordBotToken);
+  }
   activeBots.set(botConfig.id, client);
   return client;
 }
