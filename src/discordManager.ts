@@ -9,6 +9,7 @@ import { config } from "./config";
 import { botChainTooLong, pruneChains, recordMessage } from "./botChain";
 import { logBotPost, logIncoming, logOutgoing } from "./chatLog";
 import { handleCommand, registerCommands } from "./commands";
+import { handleImageRequest, parseImageRequest } from "./imageSearch";
 import { applyStatus, parseStatus } from "./presence";
 import {
   botDisplayName,
@@ -123,6 +124,15 @@ async function handleMessage(
 
   const botName = botDisplayName(client, channel);
   if (!chimingIn) logIncoming(botConfig.id, botName, message);
+
+  // "Aurora, find me a picture of ..." → search for an image instead of just chatting.
+  if (!chimingIn && !message.author.bot) {
+    const imageRequest = parseImageRequest(message.cleanContent);
+    if (imageRequest) {
+      await handleImageRequest(message, channel, imageRequest, client, botConfig);
+      return;
+    }
+  }
 
   const stopTyping = startTyping(channel, botConfig.id);
   try {
