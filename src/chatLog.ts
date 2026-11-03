@@ -79,7 +79,8 @@ export function logOutgoing(
   botId: string,
   botName: string,
   reply: Message,
-  userMessage: Message
+  userMessage: Message,
+  content: string = reply.content
 ): void {
   void save({
     botId,
@@ -87,7 +88,7 @@ export function logOutgoing(
     direction: "outgoing",
     message: reply,
     user: { id: userMessage.author.id, name: displayName(userMessage) },
-    content: reply.content,
+    content,
   });
 }
 
