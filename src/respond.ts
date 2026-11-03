@@ -6,9 +6,11 @@ import {
   MessageMentionOptions,
   PermissionFlagsBits,
 } from "discord.js";
+import { affectionNote } from "./affection";
 import { config } from "./config";
 import { callKindroidAI } from "./kindroidAPI";
 import { fetchConversation } from "./messageFetch";
+import { sleepNote } from "./sleep";
 import { BotConfig, ConversationMessage } from "./types";
 
 /** Shared helpers for anything that makes the bot talk. */
@@ -62,16 +64,24 @@ export function canPostIn(channel: ReplyChannel): boolean {
 
 /**
  * Asks Kindroid for a message based on the channel's recent history.
- * `extra` is added to the end of the conversation (used for welcomes and
- * scheduled posts). Returns null when Kindroid is rate limiting.
+ * `extra` is added to the end of the conversation (used for welcomes,
+ * scheduled posts and features). `forUser` adds mood hints (sleepy at
+ * night, affection level). Returns null when Kindroid is rate limiting.
  */
 export async function generateReply(
   client: Client<true>,
   botConfig: BotConfig,
   channel: ReplyChannel,
-  extra?: ConversationMessage
+  extra?: ConversationMessage,
+  forUser?: { id: string; name: string }
 ): Promise<string | null> {
   const conversation = await fetchConversation(channel, client.user.id, config.contextMessageLimit);
+
+  // Hints about the time of day (sleepy at night) and how close she is with this person.
+  if (forUser) {
+    const notes = [sleepNote(botConfig.id), affectionNote(botConfig.id, forUser)].filter(Boolean);
+    if (notes.length) conversation.push({ username: "Server", text: `(${notes.join(" ")})` });
+  }
   if (extra) conversation.push(extra);
   if (conversation.length === 0) return null;
 

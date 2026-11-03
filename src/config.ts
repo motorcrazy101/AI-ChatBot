@@ -28,6 +28,18 @@ function percentFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+/** Reads "HH:MM" (24-hour) times like SLEEP_BEDTIME=23:00. */
+function clockFromEnv(name: string, fallback: string): string {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) {
+    console.warn(`Ignoring invalid ${name}="${raw}" (use 24-hour HH:MM), using ${fallback}`);
+    return fallback;
+  }
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
 function validTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
@@ -109,6 +121,16 @@ function loadConfig() {
     /** Password for the chat log web page. Page is off when not set. */
     logViewerPassword: process.env.LOG_VIEWER_PASSWORD?.trim() || "",
     port: intFromEnv("PORT", 8080),
+    /** Sleep schedule defaults (can be changed with /aurora sleep). */
+    sleepEnabled: (process.env.SLEEP_SCHEDULE?.trim().toLowerCase() ?? "on") !== "off",
+    sleepBedtime: clockFromEnv("SLEEP_BEDTIME", "23:00"),
+    sleepWake: clockFromEnv("SLEEP_WAKE", "07:00"),
+    /** Time of day birthday wishes go out. */
+    birthdayTime: clockFromEnv("BIRTHDAY_TIME", "09:00"),
+    /** "fahrenheit" or "celsius". */
+    weatherUnits: process.env.WEATHER_UNITS?.trim().toLowerCase() === "celsius" ? "celsius" : "fahrenheit",
+    /** Used when someone asks "what's the weather?" without a place. */
+    weatherDefaultLocation: process.env.WEATHER_LOCATION?.trim() || "",
   };
 }
 

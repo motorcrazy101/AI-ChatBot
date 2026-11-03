@@ -279,7 +279,7 @@ export async function handleImageRequest(
           `(${botName} found a picture of "${request.query}"${image.title ? ` titled "${image.title}"` : ""} ` +
           `and is sharing it in the chat right now. Write a short, in-character message to go with it. ` +
           `Don't say you can't send pictures.)`,
-      });
+      }, { id: message.author.id, name: message.member?.displayName ?? message.author.displayName });
       if (reply) comment = reply.slice(0, 1800);
     } catch (err) {
       console.warn(`[${botConfig.id}] Comment for image failed:`, (err as Error).message);

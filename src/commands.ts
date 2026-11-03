@@ -1,5 +1,6 @@
 import {
   ApplicationCommandDataResolvable,
+  Guild,
   ChannelType,
   ChatInputCommandInteraction,
   Client,
@@ -10,9 +11,13 @@ import {
 } from "discord.js";
 import { config } from "./config";
 import { isDbReady, pool } from "./db";
-import { applyStatus, describeStatus, parseStatus } from "./presence";
+import { levelFor, topAffection } from "./affection";
+import { allBirthdays } from "./birthdays";
+import { describeStatus, parseStatus, refreshPresence } from "./presence";
 import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler";
 import { getSettings, toggleInList, updateSettings } from "./settings";
+import { currentPhase } from "./sleep";
+import { MONTHS } from "./time";
 import { BotConfig, ScheduleDays, StatusType } from "./types";
 import { welcomeMember } from "./welcome";
 
@@ -193,6 +198,38 @@ function buildCommand(name: string, botName: string) {
               o.setName("id").setDescription("Number from the list").setRequired(true)
             )
         )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("sleep")
+        .setDescription("Her sleep schedule (😴 at night, sleepy replies if woken)")
+        .addSubcommand((s) => s.setName("on").setDescription("Turn the sleep schedule on"))
+        .addSubcommand((s) => s.setName("off").setDescription("Turn it off (she's always awake)"))
+        .addSubcommand((s) =>
+          s
+            .setName("set")
+            .setDescription("Change bedtime and wake-up time")
+            .addStringOption((o) => o.setName("bedtime").setDescription("e.g. 11pm").setRequired(true))
+            .addStringOption((o) => o.setName("wake").setDescription("e.g. 7am").setRequired(true))
+        )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("birthdays")
+        .setDescription("Birthday wishes")
+        .addSubcommand((s) =>
+          s
+            .setName("on")
+            .setDescription("Post birthday wishes in a channel")
+            .addChannelOption((o) =>
+              o
+                .setName("channel")
+                .setDescription("Where to post (default: this channel)")
+                .addChannelTypes(...POSTABLE_CHANNELS)
+            )
+        )
+        .addSubcommand((s) => s.setName("off").setDescription("Stop posting birthday wishes here (DMs instead)"))
+        .addSubcommand((s) => s.setName("list").setDescription("Show everyone's saved birthdays"))
     );
 }
 
@@ -295,10 +332,12 @@ async function runAction(
       await updateSettings(botId, (s) => {
         s.status = status;
       });
-      applyStatus(client, status);
+      refreshPresence(client, botConfig, true);
+      const sleeping = currentPhase(botId) !== "awake" && getSettings(botId).sleep.enabled;
+      const sleepNoteText = sleeping ? `\n-# She's sleeping/just waking up right now, so it'll show once she's fully awake.` : "";
       return status.text
-        ? `✨ Status set to **${describeStatus(status)}**${persistNote}`
-        : `Status cleared.${persistNote}`;
+        ? `✨ Status set to **${describeStatus(status)}**${sleepNoteText}${persistNote}`
+        : `Status cleared.${sleepNoteText}${persistNote}`;
     }
 
     // ---- chime-ins ----
@@ -417,11 +456,61 @@ async function runAction(
       return `Posted scheduled message #${id} in ${channelMention(post.channelId)}.`;
     }
 
+    // ---- sleep schedule ----
+    case "sleep on":
+    case "sleep off": {
+      const enabled = action === "sleep on";
+      const s = await updateSettings(botId, (s) => {
+        s.sleep.enabled = enabled;
+      });
+      refreshPresence(client, botConfig, true);
+      return enabled
+        ? `😴 Sleep schedule on: asleep ${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)} (${config.timezone}).${persistNote}`
+        : `☀️ Sleep schedule off — she's always awake now.${persistNote}`;
+    }
+    case "sleep set": {
+      const bedtime = parseTime(interaction.options.getString("bedtime", true));
+      const wake = parseTime(interaction.options.getString("wake", true));
+      if (!bedtime || !wake) return "I didn't understand those times. Try something like `11pm` and `7am`.";
+      if (bedtime === wake) return "Bedtime and wake-up time can't be the same.";
+      await updateSettings(botId, (s) => {
+        s.sleep = { enabled: true, bedtime, wake };
+      });
+      refreshPresence(client, botConfig, true);
+      return `😴 She'll sleep from **${formatTime(bedtime)}** to **${formatTime(wake)}** (${config.timezone}).${persistNote}`;
+    }
+
+    // ---- birthdays ----
+    case "birthdays on": {
+      const channelId = interaction.options.getChannel("channel")?.id ?? here;
+      await updateSettings(botId, (s) => {
+        s.birthdayChannels[guildId] = channelId;
+      });
+      return (
+        `🎂 Birthday wishes will be posted in ${channelMention(channelId)} at ${formatTime(config.birthdayTime)}. ` +
+        `People can tell her with *${botName}, my birthday is May 5*.${persistNote}`
+      );
+    }
+    case "birthdays off":
+      await updateSettings(botId, (s) => {
+        delete s.birthdayChannels[guildId];
+      });
+      return `Birthday wishes won't be posted here anymore (she'll DM people instead).${persistNote}`;
+    case "birthdays list": {
+      const list = await allBirthdays(botId);
+      if (list.length === 0) return `No birthdays saved yet. People can say *${botName}, my birthday is May 5*.`;
+      const ids = list.map((b) => b.userId);
+      const members = await interaction.guild.members.fetch({ user: ids }).catch(() => null);
+      const inServer = members ? list.filter((b) => members.has(b.userId)) : list;
+      if (inServer.length === 0) return "Nobody in this server has saved a birthday yet.";
+      return `🎂 **Birthdays**\n${inServer.map((b) => `• ${MONTHS[b.month - 1]} ${b.day} — ${userMention(b.userId)}`).join("\n")}`;
+    }
+
     // ---- info ----
     case "settings":
       return describeSettings(botConfig, guildId, cmd);
     case "stats":
-      return stats(botId, guildId, botName);
+      return stats(botId, interaction.guild, botName);
 
     default:
       return "Unknown command.";
@@ -445,13 +534,36 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Reactions: ${s.reactionChance}% · ${s.reactionEmojis.join(" ") || "no emojis"}`,
     `• Welcome channel: ${welcome ? channelMention(welcome) : "off"}`,
     `• Scheduled posts: ${scheduleCount}`,
+    `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,
+    `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
     `• Saved to database: ${isDbReady() ? "yes" : "no (settings reset on restart)"}`,
   ].join("\n");
 }
 
-async function stats(botId: string, guildId: string, botName: string): Promise<string> {
+async function favorites(botId: string, guild: Guild): Promise<string> {
+  const top = await topAffection(botId, 50);
+  if (top.length === 0) return "";
+  const members = await guild.members.fetch({ user: top.map((t) => t.userId) }).catch(() => null);
+  const inServer = (members ? top.filter((t) => members.has(t.userId)) : top).slice(0, 10);
+  if (inServer.length === 0) return "";
+  return inServer
+    .map((t, i) => {
+      const level = levelFor(t.points);
+      return `${i + 1}. ${level.emoji} **${t.userName}** — ${level.name}${t.triviaWins ? ` · 🧠 ${t.triviaWins}` : ""}`;
+    })
+    .join("\n");
+}
+
+async function stats(botId: string, guild: Guild, botName: string): Promise<string> {
+  const favoriteList = await favorites(botId, guild);
+  const favoriteSection = favoriteList ? ["", "💕 **Her favorites:**", favoriteList] : [];
+
   if (!pool || !isDbReady()) {
-    return "Stats need the database. Connect Postgres on Railway (set DATABASE_URL) and they'll start counting.";
+    return [
+      `📊 **${botName}'s stats**`,
+      "Message counts need the database. Connect Postgres on Railway (set DATABASE_URL) and they'll start counting.",
+      ...favoriteSection,
+    ].join("\n");
   }
 
   const totals = await pool.query<{ messages: number; replies: number; people: number }>(
@@ -460,7 +572,7 @@ async function stats(botId: string, guildId: string, botName: string): Promise<s
             COUNT(DISTINCT user_id) FILTER (WHERE direction = 'incoming')::int AS people
        FROM chat_logs
       WHERE bot_id = $1 AND guild_id = $2 AND created_at > now() - interval '30 days'`,
-    [botId, guildId]
+    [botId, guild.id]
   );
   const top = await pool.query<{ user_name: string; count: number }>(
     `SELECT MAX(user_name) AS user_name, COUNT(*)::int AS count
@@ -470,11 +582,13 @@ async function stats(botId: string, guildId: string, botName: string): Promise<s
       GROUP BY user_id
       ORDER BY count DESC
       LIMIT 10`,
-    [botId, guildId]
+    [botId, guild.id]
   );
 
   const t = totals.rows[0] ?? { messages: 0, replies: 0, people: 0 };
-  if (t.messages === 0) return `No chats with ${botName} in this server in the last 30 days yet.`;
+  if (t.messages === 0) {
+    return [`No chats with ${botName} in this server in the last 30 days yet.`, ...favoriteSection].join("\n");
+  }
 
   const medals = ["🥇", "🥈", "🥉"];
   const leaderboard = top.rows
@@ -487,5 +601,6 @@ async function stats(botId: string, guildId: string, botName: string): Promise<s
     "",
     "**Who talks to her the most:**",
     leaderboard,
+    ...favoriteSection,
   ].join("\n");
 }

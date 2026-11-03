@@ -1,4 +1,7 @@
 import { ActivityType, Client } from "discord.js";
+import { getSettings } from "./settings";
+import { currentPhase, phaseStatus } from "./sleep";
+import { BotConfig } from "./types";
 import { StatusSetting, StatusType } from "./types";
 
 /** Custom status shown under the bot's name in the member list. */
@@ -62,4 +65,24 @@ export function applyStatus(client: Client<true>, status: StatusSetting): void {
       ? { name: "Custom Status", state: status.text, type }
       : { name: status.text, type };
   client.user.setPresence({ activities: [activity], status: "online" });
+}
+
+const lastApplied = new Map<string, string>();
+
+/** The status she should show right now (sleep status overrides the normal one). */
+export function currentStatus(botConfig: BotConfig): StatusSetting {
+  return (
+    phaseStatus(currentPhase(botConfig.id)) ??
+    getSettings(botConfig.id).status ??
+    parseStatus(botConfig.defaultStatus)
+  );
+}
+
+/** Applies the right status if it changed (called every minute and after /aurora status). */
+export function refreshPresence(client: Client<true>, botConfig: BotConfig, force = false): void {
+  const status = currentStatus(botConfig);
+  const signature = `${status.type}:${status.text}`;
+  if (!force && lastApplied.get(botConfig.id) === signature) return;
+  lastApplied.set(botConfig.id, signature);
+  applyStatus(client, status);
 }

@@ -8,9 +8,14 @@ import {
 import { config } from "./config";
 import { botChainTooLong, pruneChains, recordMessage } from "./botChain";
 import { logBotPost, logIncoming, logOutgoing } from "./chatLog";
+import { addAffection, AffectionChange } from "./affection";
+import { startBirthdayLoop } from "./birthdays";
 import { handleCommand, registerCommands } from "./commands";
+import { FeatureContext, stripBotName } from "./featureKit";
+import { runFeatures } from "./features";
+import { checkTriviaAnswer } from "./games";
 import { handleImageRequest, parseImageRequest } from "./imageSearch";
-import { applyStatus, parseStatus } from "./presence";
+import { refreshPresence } from "./presence";
 import {
   botDisplayName,
   canPostIn,
@@ -20,7 +25,9 @@ import {
   sendText,
   startTyping,
 } from "./respond";
+import { startReminderLoop } from "./reminders";
 import { startScheduler } from "./scheduler";
+import { currentPhase } from "./sleep";
 import { getSettings, settingsLoaded } from "./settings";
 import { welcomeMember } from "./welcome";
 import { BotConfig } from "./types";
@@ -101,14 +108,20 @@ async function handleMessage(
   const channel = message.channel as ReplyChannel;
   if (!canPostIn(channel)) return;
 
+  const user = { id: message.author.id, name: message.member?.displayName ?? message.author.displayName };
+
+  // Trivia guesses ("b", "c"...) can come from anyone in the channel.
+  if (await checkTriviaAnswer(message, user.name, botConfig.id)) return;
+
   const addressed = isAddressedToBot(message, client);
 
-  // Not talking to her: maybe chime in or react in chime-in channels.
+  // Not talking to her: maybe chime in or react in chime-in channels (not while she's asleep).
   let chimingIn = false;
   if (!addressed) {
     if (message.author.bot || !message.inGuild()) return;
     if (!settings.chimeChannels.includes(message.channelId)) return;
     if (!message.content.trim()) return;
+    if (currentPhase(botConfig.id) === "asleep") return;
 
     if (
       chimeInCooldownOver(botConfig.id, message.channelId) &&
@@ -123,20 +136,48 @@ async function handleMessage(
   }
 
   const botName = botDisplayName(client, channel);
+  const fromPerson = !chimingIn && !message.author.bot;
   if (!chimingIn) logIncoming(botConfig.id, botName, message);
 
-  // "Aurora, find me a picture of ..." → search for an image instead of just chatting.
-  if (!chimingIn && !message.author.bot) {
-    const imageRequest = parseImageRequest(message.cleanContent);
-    if (imageRequest) {
-      await handleImageRequest(message, channel, imageRequest, client, botConfig);
+  // Talking to her slowly raises your affection level.
+  const affection = fromPerson ? await addAffection(botConfig.id, user, "chat") : null;
+
+  // Features: reminders, birthdays, weather, games, anime lookup, pictures...
+  if (fromPerson) {
+    try {
+      const ctx: FeatureContext = {
+        message,
+        channel,
+        client,
+        botConfig,
+        botName,
+        user,
+        text: stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]),
+      };
+      let handled = await runFeatures(ctx);
+      if (!handled) {
+        const imageRequest = parseImageRequest(message.cleanContent);
+        if (imageRequest) {
+          await handleImageRequest(message, channel, imageRequest, client, botConfig);
+          handled = true;
+        }
+      }
+      if (handled) {
+        await announceLevelUp(channel, botConfig, botName, user, affection);
+        return;
+      }
+    } catch (error) {
+      console.error(`[${botConfig.id}] Feature failed for message ${message.id}:`, error);
+      await message
+        .reply({ content: config.errorMessage, allowedMentions: { parse: [] } })
+        .catch(() => undefined);
       return;
     }
   }
 
   const stopTyping = startTyping(channel, botConfig.id);
   try {
-    const reply = await generateReply(client, botConfig, channel);
+    const reply = await generateReply(client, botConfig, channel, undefined, fromPerson ? user : undefined);
     stopTyping();
     if (!reply) return;
 
@@ -148,6 +189,8 @@ async function handleMessage(
 
     const sent = await sendText(channel, reply, { replyTo: message });
     for (const post of sent) logOutgoing(botConfig.id, botName, post, message);
+
+    await announceLevelUp(channel, botConfig, botName, user, affection);
 
     // Sometimes add a reaction on top of the reply.
     if (randomPercent(settings.reactionChance)) await reactRandomly(message, botConfig);
@@ -163,6 +206,24 @@ async function handleMessage(
   } finally {
     stopTyping();
   }
+}
+
+/** "💛 Mike and Aurora are now Close Friends!" when someone levels up. */
+async function announceLevelUp(
+  channel: ReplyChannel,
+  botConfig: BotConfig,
+  botName: string,
+  user: { id: string; name: string },
+  change: AffectionChange | null
+): Promise<void> {
+  if (!change || change.after.level <= change.before.level) return;
+  const sent = await channel
+    .send({
+      content: `${change.after.emoji} **${user.name}** and **${botName}** are now **${change.after.name}s**!`,
+      allowedMentions: { parse: [] },
+    })
+    .catch(() => null);
+  if (sent) logBotPost(botConfig.id, botName, sent, "level-up");
 }
 
 // ---------- lifecycle ----------
@@ -194,12 +255,15 @@ function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
 
     void registerCommands(ready, botConfig);
     startScheduler(client, botConfig);
+    startReminderLoop(client, botConfig);
+    startBirthdayLoop(client, botConfig);
 
-    // Apply the status once saved settings are loaded.
-    void settingsLoaded().then(() => {
-      const saved = getSettings(botConfig.id).status;
-      applyStatus(ready, saved ?? parseStatus(botConfig.defaultStatus));
-    });
+    // Apply the status once saved settings are loaded, then keep it in sync
+    // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).
+    void settingsLoaded().then(() => refreshPresence(ready, botConfig, true));
+    setInterval(() => {
+      if (client.isReady()) refreshPresence(client, botConfig);
+    }, 60_000).unref();
   });
 
   client.on("messageCreate", (message) => {

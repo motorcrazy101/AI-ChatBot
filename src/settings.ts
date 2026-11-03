@@ -23,6 +23,12 @@ function defaults(): BotSettings {
     schedules: [],
     nextScheduleId: 1,
     status: null,
+    sleep: {
+      enabled: config.sleepEnabled,
+      bedtime: config.sleepBedtime,
+      wake: config.sleepWake,
+    },
+    birthdayChannels: {},
   };
 }
 

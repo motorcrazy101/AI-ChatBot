@@ -75,4 +75,8 @@ export interface BotSettings {
   nextScheduleId: number;
   /** null = use BOT_STATUS_N from Railway variables. */
   status: StatusSetting | null;
+  /** Sleep schedule: "HH:MM" times in TIMEZONE. */
+  sleep: { enabled: boolean; bedtime: string; wake: string };
+  /** guildId -> channelId where birthday wishes are posted. */
+  birthdayChannels: Record<string, string>;
 }

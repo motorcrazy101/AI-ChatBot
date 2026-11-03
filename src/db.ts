@@ -45,6 +45,41 @@ const SCHEMA = `
     data       JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+
+  CREATE TABLE IF NOT EXISTS user_affection (
+    bot_id        TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    user_name     TEXT NOT NULL,
+    points        INTEGER NOT NULL DEFAULT 0,
+    messages      INTEGER NOT NULL DEFAULT 0,
+    trivia_wins   INTEGER NOT NULL DEFAULT 0,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (bot_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS reminders (
+    id          BIGSERIAL PRIMARY KEY,
+    bot_id      TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL,
+    guild_id    TEXT,
+    channel_id  TEXT NOT NULL,
+    due_at      TIMESTAMPTZ NOT NULL,
+    text        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    delivered   BOOLEAN NOT NULL DEFAULT false
+  );
+  CREATE INDEX IF NOT EXISTS reminders_due ON reminders (delivered, due_at);
+
+  CREATE TABLE IF NOT EXISTS birthdays (
+    bot_id           TEXT NOT NULL,
+    user_id          TEXT NOT NULL,
+    user_name        TEXT NOT NULL,
+    month            INTEGER NOT NULL,
+    day              INTEGER NOT NULL,
+    last_wished_year INTEGER,
+    PRIMARY KEY (bot_id, user_id)
+  );
 `;
 
 let ready = false;
