@@ -14,6 +14,14 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Welcomes new members** in her own voice
 - **Scheduled posts**: e.g. a good-morning message every day at 8am
 - **Picture search**: "aurora find me a picture of ..." posts an image with a comment from her (anime pictures are free via nekos.best; anything else uses Brave image search with SafeSearch on)
+- **Anime lookup**: "aurora tell me about Frieren" gives her take plus real MyAnimeList info
+- **Weather**: "aurora what's the weather in LA" gives a real 3-day forecast
+- **Catch-up**: "aurora what did I miss?" summarizes the chat since you last talked
+- **Mini-games**: trivia (first right answer wins), would-you-rather, truth or dare, magic 8-ball
+- **Affection levels**: she gets friendlier the more you talk (Stranger → Soulmate)
+- **Sleep schedule**: 😴 at night, groggy if you wake her, ☕ in the morning
+- **Reminders**: "aurora remind me in 2 hours to…" pings you in character
+- **Birthdays**: "aurora my birthday is May 5" and she wishes you happy birthday on the day
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -52,6 +60,22 @@ Server Settings → Integrations → the bot.
 | `/aurora reactions chance` / `emojis` | How often she reacts, and with which emojis |
 | `/aurora welcome on` / `off` / `test` | Welcome new members in a channel |
 | `/aurora schedule add` / `list` / `remove` / `test` | Scheduled posts |
+| `/aurora sleep on` / `off` / `set` | Her sleep schedule |
+| `/aurora birthdays on` / `off` / `list` | Where birthday wishes go (DMs if none) |
+
+## Things anyone can say to her
+
+| Say | What happens |
+|---|---|
+| `aurora tell me about <anime>` | Anime info and her opinion (`have you watched…`, `should I read…` work too) |
+| `aurora what's the weather in <place>` | Real forecast |
+| `aurora what did I miss?` | Chat catch-up |
+| `aurora trivia` / `aurora anime trivia` | Trivia question; reply with A–D |
+| `aurora would you rather` · `aurora truth or dare` · `aurora 8ball <question>` | Party games |
+| `aurora remind me in 2 hours to …` · `aurora my reminders` · `aurora cancel reminder 3` | Reminders |
+| `aurora my birthday is May 5` · `aurora when is my birthday` · `aurora forget my birthday` | Birthdays |
+| `aurora what's my level` | Your friendship level with her |
+| `aurora find me a picture of …` | Picture search |
 
 ## Discord Developer Portal
 
