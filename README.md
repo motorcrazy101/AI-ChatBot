@@ -13,6 +13,7 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Emoji reactions**: she sometimes reacts to messages
 - **Welcomes new members** in her own voice
 - **Scheduled posts**: e.g. a good-morning message every day at 8am
+- **Picture search**: "aurora find me a picture of ..." posts an image with a comment from her (anime pictures are free via nekos.best; anything else uses Brave image search with SafeSearch on)
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -30,6 +31,8 @@ See `.env.example` for the full list. The main ones:
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`: saves chats and command settings |
 | `LOG_VIEWER_PASSWORD` | Turns on the chat log web page |
 | `TIMEZONE` | For scheduled posts, default `America/Los_Angeles` |
+| `BRAVE_API_KEY` | Turns on web picture search (anime pictures work without it) |
+| `IMAGE_SEARCH_DAILY_LIMIT` | Max Brave searches per day, default 50 |
 
 Never put real keys or tokens in GitHub.
 
