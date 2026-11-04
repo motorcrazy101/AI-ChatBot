@@ -112,7 +112,7 @@ async function post(client: Client<true>, botConfig: BotConfig, c: Confession): 
     .setColor(0x2b2d31)
     .setTitle(`🤫 Anonymous Confession #${number}`)
     .setDescription(c.text)
-    .setFooter({ text: `DM ${client.user.displayName} "confess: ..." to send your own` });
+    .setFooter({ text: `DM ${client.user.displayName} "I want to confess" to send your own` });
   const sent = await channel.send({ content: comment?.slice(0, 1800) ?? "", embeds: [embed], allowedMentions: { parse: [] } });
   logBotPost(botConfig.id, client.user.displayName, sent, "game");
   return true;
@@ -126,13 +126,65 @@ async function tellConfessor(client: Client<true>, userId: string, text: string)
 /**
  * Handles "confess: ..." in a DM. Returns true if the message was a confession.
  */
-export async function handleConfessionDm(message: Message, client: Client<true>, botConfig: BotConfig): Promise<boolean> {
-  const match = message.content.match(TRIGGER);
-  if (!match) return false;
+/** "I want to confess" → her next DM from them is the confession (for 10 minutes). */
+const START =
+  /\b(?:i\s+(?:want|wanna|would like|need|have)\s+to\s+(?:confess|make a confession)|i(?:'d| would)\s+like\s+to\s+confess|i\s+have\s+(?:a\s+confession|something\s+to\s+confess)|can\s+i\s+(?:confess|make\s+a\s+confession)|confession\s+time)\b[\s,:\-–]*(?:something|smth|sum|anything)?[\s,:\-–]*(?:that\s+)?([\s\S]*)$/i;
+const CANCEL = /^\s*(?:cancel|nevermind|never\s*mind|nvm|stop|forget it|no|nah)\b[\s.!]*$/i;
+const WAIT_MS = 10 * 60_000;
+const waiting = new Map<string, number>(); // botId:userId -> expires at
 
-  const text = match[1].trim().slice(0, MAX_LENGTH);
+/** Detects a confession and what it says; "" means "waiting for them to say it". */
+function confessionText(message: Message, botId: string): string | null {
+  const key = `${botId}:${message.author.id}`;
+  const content = message.content.trim();
+
+  const expires = waiting.get(key);
+  if (expires && expires > Date.now()) {
+    waiting.delete(key);
+    return CANCEL.test(content) ? "\u0000cancel" : content;
+  }
+  waiting.delete(key);
+
+  const direct = content.match(TRIGGER);
+  if (direct) return direct[1].trim();
+
+  const start = content.match(START);
+  if (start) {
+    const rest = start[1].replace(/^[?.!\s]+|[?\s]+$/g, "").trim();
+    if (rest.length >= 3) return rest; // "I want to confess that I ..." — all in one message
+    waiting.set(key, Date.now() + WAIT_MS);
+    return "";
+  }
+  return null;
+}
+
+export async function handleConfessionDm(message: Message, client: Client<true>, botConfig: BotConfig): Promise<boolean> {
+  const found = confessionText(message, botConfig.id);
+  if (found === null) return false;
+
+  if (found === "\u0000cancel") {
+    await message.reply("Okay, cancelled — nothing was sent 🤐").catch(() => undefined);
+    return true;
+  }
+  if (found === "" && Object.keys(getSettings(botConfig.id).confessionChannels).length === 0) {
+    waiting.delete(`${botConfig.id}:${message.author.id}`);
+    await message.reply("Confessions aren't turned on in any server we share yet 🤫").catch(() => undefined);
+    return true;
+  }
+  if (found === "") {
+    await message
+      .reply(
+        "🤫 Okay, I'm listening… Send me your confession as your **next message** and I'll post it anonymously. " +
+          "(Say \"cancel\" to stop.)"
+      )
+      .catch(() => undefined);
+    return true;
+  }
+
+  const text = found.slice(0, MAX_LENGTH);
   if (text.length < 3) {
-    await message.reply("Tell me what you want to confess! Like: `confess: I've never watched Naruto`").catch(() => undefined);
+    waiting.set(`${botConfig.id}:${message.author.id}`, Date.now() + WAIT_MS);
+    await message.reply("Hm? Tell me what you want to confess — just send it as your next message 🤫").catch(() => undefined);
     return true;
   }
 
