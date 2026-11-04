@@ -21,6 +21,7 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Affection levels**: she gets friendlier the more you talk (Stranger → Soulmate)
 - **Sleep schedule**: 😴 at night, groggy if you wake her, ☕ in the morning
 - **Reminders**: "aurora remind me in 2 hours to…" pings you in character
+- **Long-term memory**: she remembers your birthday, things you ask her to remember, and past conversations with you (DMs never come up in servers)
 - **Birthdays**: "aurora my birthday is May 5" and she wishes you happy birthday on the day
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
@@ -77,6 +78,7 @@ Server Settings → Integrations → the bot.
 | `aurora remind me in 2 hours to …` · `aurora my reminders` · `aurora cancel reminder 3` | Reminders |
 | `aurora my birthday is May 5` · `aurora when is my birthday` · `aurora forget my birthday` | Birthdays |
 | `aurora what's my level` | Your friendship level with her |
+| `aurora remember that I love cats` · `aurora what do you remember about me?` · `aurora forget note 2` | Things she remembers about you long-term |
 | `aurora find me a picture of …` | Picture search |
 
 ## Discord Developer Portal
