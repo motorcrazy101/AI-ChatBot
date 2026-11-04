@@ -13,6 +13,7 @@ import { config } from "./config";
 import { isDbReady, pool } from "./db";
 import { levelFor, topAffection } from "./affection";
 import { allBirthdays } from "./birthdays";
+import { isOwner, MAX_FACT_LENGTH, MAX_MEMORIES } from "./memory";
 import { describeStatus, parseStatus, refreshPresence } from "./presence";
 import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler";
 import { getSettings, toggleInList, updateSettings } from "./settings";
@@ -214,6 +215,45 @@ function buildCommand(name: string, botName: string) {
             .addIntegerOption((o) =>
               o.setName("id").setDescription("Number from the list").setRequired(true)
             )
+        )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("memory")
+        .setDescription("Things she remembers about people (bot owner only)")
+        .addSubcommand((s) =>
+          s
+            .setName("add")
+            .setDescription("Teach her a fact (owner only)")
+            .addStringOption((o) =>
+              o
+                .setName("fact")
+                .setDescription("e.g. He's the Asylum Warden and she knows him personally")
+                .setMaxLength(300)
+                .setRequired(true)
+            )
+            .addUserOption((o) => o.setName("person").setDescription("Who it's about (leave empty for a general fact)"))
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("nicknames")
+            .setDescription("Other names people use for someone (owner only)")
+            .addUserOption((o) => o.setName("person").setDescription("Who").setRequired(true))
+            .addStringOption((o) =>
+              o.setName("names").setDescription("Comma-separated, e.g. douche, the warden (empty = clear)")
+            )
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("list")
+            .setDescription("Show what she remembers (owner only)")
+            .addUserOption((o) => o.setName("person").setDescription("Only this person"))
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("remove")
+            .setDescription("Make her forget a fact (owner only)")
+            .addIntegerOption((o) => o.setName("id").setDescription("Number from the list").setRequired(true))
         )
     )
     .addSubcommandGroup((g) =>
@@ -473,6 +513,16 @@ async function runAction(
       return `Posted scheduled message #${id} in ${channelMention(post.channelId)}.`;
     }
 
+    // ---- memories (owner only) ----
+    case "memory add":
+    case "memory nicknames":
+    case "memory list":
+    case "memory remove":
+      if (!isOwner(botId, interaction.user.id)) {
+        return "🔒 Only the bot owner can manage her memories.";
+      }
+      return memoryAction(action, interaction, botId, botName);
+
     // ---- reply length ----
     case "length": {
       const size = interaction.options.getString("size", true) as ReplyLength;
@@ -571,6 +621,76 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
     `• Saved to database: ${isDbReady() ? "yes" : "no (settings reset on restart)"}`,
   ].join("\n");
+}
+
+async function memoryAction(
+  action: string,
+  interaction: ChatInputCommandInteraction<"cached">,
+  botId: string,
+  botName: string
+): Promise<string> {
+  const settings = getSettings(botId);
+  const nameOf = async (userId: string, fallback: string) =>
+    (await interaction.guild.members.fetch(userId).catch(() => null))?.displayName ?? fallback;
+  const persistNote = isDbReady() ? "" : "\n-# Note: the database isn't connected, so this resets when the bot restarts.";
+
+  if (action === "memory add") {
+    if (settings.memories.length >= MAX_MEMORIES) return `She already remembers ${MAX_MEMORIES} things. Remove some first.`;
+    const fact = interaction.options.getString("fact", true).trim().slice(0, MAX_FACT_LENGTH);
+    const user = interaction.options.getUser("person");
+    const userName = user ? await nameOf(user.id, user.displayName) : null;
+    let id = 0;
+    await updateSettings(botId, (s) => {
+      id = s.nextMemoryId++;
+      s.memories.push({ id, userId: user?.id ?? null, userName, fact });
+    });
+    return `🧠 Memory **#${id}** saved${user ? ` about ${userMention(user.id)}` : ""}:\n> ${fact}\n${botName} will treat this as true.${persistNote}`;
+  }
+
+  if (action === "memory nicknames") {
+    const user = interaction.options.getUser("person", true);
+    const names = (interaction.options.getString("names") ?? "")
+      .split(",")
+      .map((n) => n.trim().slice(0, 32))
+      .filter(Boolean)
+      .slice(0, 10);
+    const displayName = await nameOf(user.id, user.displayName);
+    await updateSettings(botId, (s) => {
+      if (names.length) s.nicknames[user.id] = names;
+      else delete s.nicknames[user.id];
+      // Remember their current name too, so she recognizes it in chat.
+      for (const m of s.memories) if (m.userId === user.id) m.userName = displayName;
+      if (!s.memories.some((m) => m.userId === user.id) && names.length && !names.includes(displayName)) {
+        s.nicknames[user.id] = [displayName, ...names].slice(0, 10);
+      }
+    });
+    return names.length
+      ? `🏷️ ${botName} now knows ${userMention(user.id)} also goes by: **${names.join(", ")}**${persistNote}`
+      : `Nicknames cleared for ${userMention(user.id)}.${persistNote}`;
+  }
+
+  if (action === "memory list") {
+    const user = interaction.options.getUser("person");
+    const facts = settings.memories.filter((m) => !user || m.userId === user.id);
+    const nicknameLines = Object.entries(settings.nicknames)
+      .filter(([id]) => !user || id === user.id)
+      .map(([id, names]) => `🏷️ ${userMention(id)} also goes by: ${names.join(", ")}`);
+    if (facts.length === 0 && nicknameLines.length === 0) {
+      return user ? `She doesn't remember anything about ${userMention(user.id)} yet.` : "She doesn't remember anything yet. Add something with `memory add`.";
+    }
+    const factLines = facts.map((m) => `**#${m.id}** ${m.userId ? userMention(m.userId) : "🌐 general"} — ${m.fact}`);
+    return [`🧠 **What ${botName} remembers**`, ...factLines, ...nicknameLines].join("\n");
+  }
+
+  // memory remove
+  const id = interaction.options.getInteger("id", true);
+  let removed = false;
+  await updateSettings(botId, (s) => {
+    const before = s.memories.length;
+    s.memories = s.memories.filter((m) => m.id !== id);
+    removed = s.memories.length < before;
+  });
+  return removed ? `🗑️ ${botName} forgot memory #${id}.` : `There's no memory #${id}.`;
 }
 
 async function favorites(botId: string, guild: Guild): Promise<string> {

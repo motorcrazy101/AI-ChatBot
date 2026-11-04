@@ -9,6 +9,7 @@ import {
 import { affectionNote } from "./affection";
 import { config } from "./config";
 import { callKindroidAI } from "./kindroidAPI";
+import { memoryNote } from "./memory";
 import { fetchConversation } from "./messageFetch";
 import { getSettings } from "./settings";
 import { sleepNote } from "./sleep";
@@ -81,6 +82,7 @@ export async function generateReply(
 
   // Hints about reply length, the time of day (sleepy at night) and how close she is with this person.
   const notes = [
+    memoryNote(botConfig.id, extra ? [...conversation, extra] : conversation, forUser),
     LENGTH_HINTS[length],
     forUser ? sleepNote(botConfig.id) : null,
     forUser ? affectionNote(botConfig.id, forUser) : null,

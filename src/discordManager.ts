@@ -13,6 +13,7 @@ import { startBirthdayLoop } from "./birthdays";
 import { handleCommand, registerCommands } from "./commands";
 import { FeatureContext, stripBotName } from "./featureKit";
 import { runFeatures } from "./features";
+import { loadOwners } from "./memory";
 import { checkTriviaAnswer } from "./games";
 import { handleImageRequest, parseImageRequest } from "./imageSearch";
 import { refreshPresence } from "./presence";
@@ -254,6 +255,7 @@ function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
     console.log(`[${botConfig.id}] Logged in as ${ready.user.tag}`);
 
     void registerCommands(ready, botConfig);
+    void loadOwners(ready, botConfig.id);
     startScheduler(client, botConfig);
     startReminderLoop(client, botConfig);
     startBirthdayLoop(client, botConfig);

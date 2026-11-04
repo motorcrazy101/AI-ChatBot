@@ -133,6 +133,10 @@ function loadConfig() {
     replyLength: (["short", "medium", "long", "off"].includes(process.env.REPLY_LENGTH?.trim().toLowerCase() ?? "")
       ? process.env.REPLY_LENGTH!.trim().toLowerCase()
       : "short") as "short" | "medium" | "long" | "off",
+    /** Extra Discord user IDs allowed to manage memories (the bot's owner always can). */
+    ownerIds: (process.env.OWNER_IDS ?? "")
+      .split(/[\s,]+/)
+      .filter((id) => /^\d{15,25}$/.test(id)),
     /** Used when someone asks "what's the weather?" without a place. */
     weatherDefaultLocation: process.env.WEATHER_LOCATION?.trim() || "",
   };

@@ -59,6 +59,15 @@ export interface ScheduledPost {
 
 export type ReplyLength = "short" | "medium" | "long" | "off";
 
+/** Something the owner told her to remember. userId null = a general fact. */
+export interface MemoryFact {
+  id: number;
+  userId: string | null;
+  /** The person's name when the memory was saved. */
+  userName: string | null;
+  fact: string;
+}
+
 export interface BotSettings {
   /** Channels where the bot says nothing at all. */
   quietChannels: string[];
@@ -83,4 +92,9 @@ export interface BotSettings {
   birthdayChannels: Record<string, string>;
   /** How long her replies can be. */
   replyLength: ReplyLength;
+  /** Owner-set memories about people (or general facts). */
+  memories: MemoryFact[];
+  nextMemoryId: number;
+  /** userId -> other names people use for them, e.g. ["douche"]. */
+  nicknames: Record<string, string[]>;
 }

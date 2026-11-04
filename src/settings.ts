@@ -30,6 +30,9 @@ function defaults(): BotSettings {
     },
     birthdayChannels: {},
     replyLength: config.replyLength,
+    memories: [],
+    nextMemoryId: 1,
+    nicknames: {},
   };
 }
 
