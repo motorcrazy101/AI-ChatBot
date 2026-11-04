@@ -33,6 +33,7 @@ function defaults(): BotSettings {
     memories: [],
     nextMemoryId: 1,
     nicknames: {},
+    repliesOffGuilds: [],
   };
 }
 

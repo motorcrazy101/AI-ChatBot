@@ -97,4 +97,6 @@ export interface BotSettings {
   nextMemoryId: number;
   /** userId -> other names people use for them, e.g. ["douche"]. */
   nicknames: Record<string, string[]>;
+  /** Servers where replying to her messages doesn't make her answer. */
+  repliesOffGuilds: string[];
 }

@@ -55,12 +55,21 @@ function containsName(text: string, name: string): boolean {
 }
 
 /** Should this bot answer this message? */
-function isAddressedToBot(message: Message, client: Client<true>): boolean {
+function isAddressedToBot(message: Message, client: Client<true>, botConfig: BotConfig): boolean {
   if (message.channel.type === ChannelType.DM) return true;
 
   const botId = client.user.id;
-  if (message.mentions.users.has(botId)) return true;
-  if (message.mentions.repliedUser?.id === botId) return true; // reply without @ping
+  const repliesOff =
+    !!message.guildId && getSettings(botConfig.id).repliesOffGuilds.includes(message.guildId);
+
+  if (repliesOff) {
+    // Replying to her doesn't count (Discord adds a ping to replies automatically),
+    // so only an @mention typed into the message itself does.
+    if (message.content.includes(`<@${botId}>`) || message.content.includes(`<@!${botId}>`)) return true;
+  } else {
+    if (message.mentions.users.has(botId)) return true;
+    if (message.mentions.repliedUser?.id === botId) return true; // reply without @ping
+  }
 
   const names = new Set([
     client.user.username,
@@ -114,7 +123,7 @@ async function handleMessage(
   // Trivia guesses ("b", "c"...) can come from anyone in the channel.
   if (await checkTriviaAnswer(message, user.name, botConfig.id)) return;
 
-  const addressed = isAddressedToBot(message, client);
+  const addressed = isAddressedToBot(message, client, botConfig);
 
   // Not talking to her: maybe chime in or react in chime-in channels (not while she's asleep).
   let chimingIn = false;

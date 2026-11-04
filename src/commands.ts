@@ -235,6 +235,15 @@ function buildCommand(name: string, botName: string) {
     )
     .addSubcommandGroup((g) =>
       g
+        .setName("replies")
+        .setDescription("Whether replying to her messages makes her answer (this server)")
+        .addSubcommand((s) => s.setName("on").setDescription("Replying to her messages makes her answer"))
+        .addSubcommand((s) =>
+          s.setName("off").setDescription("Replies to her messages don't trigger her (her name or @mention still do)")
+        )
+    )
+    .addSubcommandGroup((g) =>
+      g
         .setName("memory")
         .setDescription("Things she remembers about people (bot owner only)")
         .addSubcommand((s) =>
@@ -539,6 +548,17 @@ async function runAction(
       }
       return memoryAction(action, interaction, botId, botName);
 
+    // ---- replies ----
+    case "replies on":
+      await updateSettings(botId, (s) => toggleInList(s.repliesOffGuilds, guildId, false));
+      return `💬 Replying to ${botName}'s messages will make her answer again.${persistNote}`;
+    case "replies off":
+      await updateSettings(botId, (s) => toggleInList(s.repliesOffGuilds, guildId, true));
+      return (
+        `🔕 Replies to ${botName}'s messages won't make her answer in this server anymore. ` +
+        `People can still talk to her by saying her name or typing an @mention.${persistNote}`
+      );
+
     // ---- DM someone (owner only) ----
     case "dm": {
       if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can have her DM people.";
@@ -644,6 +664,7 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Reactions: ${s.reactionChance}% · ${s.reactionEmojis.join(" ") || "no emojis"}`,
     `• Welcome channel: ${welcome ? channelMention(welcome) : "off"}`,
     `• Scheduled posts: ${scheduleCount}`,
+    `• Answers replies to her messages: ${s.repliesOffGuilds.includes(guildId) ? "off" : "on"}`,
     `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
