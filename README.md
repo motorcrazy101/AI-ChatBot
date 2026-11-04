@@ -23,6 +23,16 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Reminders**: "aurora remind me in 2 hours to…" pings you in character
 - **Long-term memory**: she remembers your birthday, things you ask her to remember, and past conversations with you (DMs never come up in servers)
 - **Birthdays**: "aurora my birthday is May 5" and she wishes you happy birthday on the day
+- **Moods**: a daily mood (happy, hyper, cozy, dramatic, sleepy, grumpy) that colors her replies; chats, gifts and streaks cheer her up
+- **Holidays**: special status and greetings on Halloween, Christmas, New Year's and more, plus server anniversaries
+- **Notices what you're doing**: "ooh, Genshin again?" (needs Presence Intent)
+- **Daily streaks**: say good morning / good night every day for a streak with milestones
+- **Gifts**: "aurora here's a cookie 🍪" — she has favorites and dislikes
+- **Anonymous confessions**: DM her "confess: ..." and it's posted anonymously after owner approval
+- **Polls**: "aurora poll: pizza or tacos?" with reaction voting and a winner announcement
+- **Episode alerts**: "aurora tell me when Frieren airs" pings you when new episodes come out (AniList)
+- **Recommendations**: "aurora recommend me something like Frieren" (MyAnimeList)
+- **Server watchlist**: add shows, see the list, and let her pick tonight's watch
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -64,6 +74,8 @@ Server Settings → Integrations → the bot.
 | `/aurora memory add` / `nicknames` / `list` / `remove` | Facts she treats as true about people (bot owner only) |
 | `/aurora dm` | Have her DM someone in her own words (bot owner only) |
 | `/aurora replies on` / `off` | Whether replying to her messages makes her answer (per server) |
+| `/aurora confessions on` / `off` / `approval` | Anonymous confessions channel and approval |
+| `/aurora mood show` / `set` / `reset` | Her mood today |
 | `/aurora length` | How long her replies are (short / medium / long / no limit) |
 | `/aurora sleep on` / `off` / `set` | Her sleep schedule |
 | `/aurora birthdays on` / `off` / `list` | Where birthday wishes go (DMs if none) |
@@ -82,6 +94,13 @@ Server Settings → Integrations → the bot.
 | `aurora what's my level` | Your friendship level with her |
 | `aurora remember that I love cats` · `aurora what do you remember about me?` · `aurora forget note 2` | Things she remembers about you long-term |
 | `aurora find me a picture of …` | Picture search |
+| `aurora good morning` / `aurora goodnight` | Builds your daily streak |
+| `aurora here's a cookie 🍪` · `*hands aurora a plushie*` | Give her a gift |
+| `aurora poll: pizza or tacos?` (add `for 2 hours`) | Reaction poll |
+| `aurora tell me when Frieren airs` · `aurora my anime alerts` · `aurora stop alerts for Frieren` | Episode alerts |
+| `aurora recommend me something like Frieren` · `aurora recommend a romance anime` | Recommendations |
+| `aurora add Frieren to the watchlist` · `aurora show the watchlist` · `aurora what should we watch tonight?` | Server watchlist |
+| DM her `confess: …` | Anonymous confession |
 
 ## Discord Developer Portal
 
@@ -89,6 +108,7 @@ Under **Bot → Privileged Gateway Intents**:
 
 - **Message Content Intent**: required
 - **Server Members Intent**: needed only for welcoming new members (the bot still runs without it)
+- **Presence Intent**: needed only for noticing what people are playing / listening to (the bot still runs without it)
 
 ## Chat log web page
 
