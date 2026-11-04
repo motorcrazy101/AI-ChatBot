@@ -193,7 +193,9 @@ export async function handleConfessionDm(message: Message, client: Client<true>,
   let delivered = 0;
   for (const ownerId of ownerIds(botConfig.id)) {
     const owner = await client.users.fetch(ownerId).catch(() => null);
-    const sent = await owner?.send({ embeds: [embed], components: [buttons] }).catch(() => null);
+    // The cast works around two copies of Discord's type definitions being
+    // installed at slightly different versions; the data itself is identical.
+    const sent = await owner?.send({ embeds: [embed], components: [buttons.toJSON() as never] }).catch(() => null);
     if (sent) delivered++;
   }
   await message
