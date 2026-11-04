@@ -9,7 +9,9 @@ import {
 import { affectionNote } from "./affection";
 import { config } from "./config";
 import { callKindroidAI } from "./kindroidAPI";
+import { longTermNote } from "./longTermMemory";
 import { memoryNote } from "./memory";
+import { activityNote, holidayNote, moodNote } from "./mood";
 import { fetchConversation } from "./messageFetch";
 import { getSettings } from "./settings";
 import { sleepNote } from "./sleep";
@@ -75,22 +77,53 @@ export async function generateReply(
   botConfig: BotConfig,
   channel: ReplyChannel,
   extra?: ConversationMessage,
-  forUser?: { id: string; name: string }
+  forUser?: { id: string; name: string },
+  extraNotes: string[] = []
 ): Promise<string | null> {
   const conversation = await fetchConversation(channel, client.user.id, config.contextMessageLimit);
   const length = getSettings(botConfig.id).replyLength;
 
-  // Hints about reply length, the time of day (sleepy at night) and how close she is with this person.
-  const notes = [
+  // Background she should "just know": owner-set facts about people in this
+  // conversation, plus long-term memory of the person she's talking to.
+  const background = [
     memoryNote(botConfig.id, extra ? [...conversation, extra] : conversation, forUser),
+    forUser ? await longTermNote(botConfig.id, forUser, channel.isDMBased()) : null,
+  ].filter(Boolean);
+
+  // What they're playing/listening to right now (needs the Presence Intent).
+  const presence =
+    forUser && !channel.isDMBased()
+      ? channel.guild.presences.cache.get(forUser.id) ?? channel.guild.members.cache.get(forUser.id)?.presence
+      : null;
+
+  // How to reply: length, mood, holidays, sleepy at night, how close she is with this person.
+  const style = [
     LENGTH_HINTS[length],
+    moodNote(botConfig.id),
+    holidayNote(),
     forUser ? sleepNote(botConfig.id) : null,
     forUser ? affectionNote(botConfig.id, forUser) : null,
+    forUser ? activityNote(presence, forUser.name) : null,
+    ...extraNotes,
   ].filter(Boolean);
+
+  // Background goes just BEFORE the latest message, so she answers the
+  // person (not the note) while knowing all of it.
+  if (background.length) {
+    const note = { username: "Server", text: `(${background.join(" ")})` };
+    if (conversation.length > 0) conversation.splice(conversation.length - 1, 0, note);
+    else conversation.push(note);
+  }
   if (extra) {
-    conversation.push({ ...extra, text: notes.length ? `${extra.text} (${notes.join(" ")})` : extra.text });
-  } else if (notes.length) {
-    conversation.push({ username: "Server", text: `(${notes.join(" ")})` });
+    conversation.push({ ...extra, text: style.length ? `${extra.text} (${style.join(" ")})` : extra.text });
+  } else if (style.length && conversation.length > 0) {
+    // Tuck the style hints into the background note right before the last message.
+    const before = conversation[conversation.length - 2];
+    if (before && before.username === "Server" && background.length) {
+      before.text = `${before.text.slice(0, -1)} ${style.join(" ")})`;
+    } else {
+      conversation.splice(conversation.length - 1, 0, { username: "Server", text: `(${style.join(" ")})` });
+    }
   }
   if (conversation.length === 0) return null;
 

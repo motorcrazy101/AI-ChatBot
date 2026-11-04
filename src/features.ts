@@ -1,19 +1,26 @@
 import { EmbedBuilder } from "discord.js";
-import { getAffection, nextLevel, progressBar } from "./affection";
+import { getAffection, getStreak, nextLevel, progressBar } from "./affection";
+import { animeAlertFeature } from "./animeAlerts";
 import { animeFeature } from "./anime";
 import { birthdayFeature } from "./birthdays";
 import { catchUpFeature } from "./catchUp";
 import { EMBED_COLOR, Feature, FeatureContext, replyInCharacter } from "./featureKit";
 import { gameFeatures } from "./games";
+import { giftFeature } from "./gifts";
+import { pollFeature } from "./polls";
+import { recommendationFeature } from "./recommendations";
 import { reminderFeature } from "./reminders";
+import { rememberFeature } from "./rememberFeature";
+import { watchlistFeature } from "./watchlist";
 import { weatherFeature } from "./weather";
 
 /** "aurora what's my level?" — shows your affection level with her. */
-const LEVEL = /\b(?:what'?s|whats|what is|show(?: me)?|check)\s+(?:my|our)\s+(?:affection|level|friendship(?: level)?|relationship(?: level)?|bond)\b|\bhow close are we\b/i;
+const LEVEL = /\b(?:what'?s|whats|what is|show(?: me)?|check)\s+(?:my|our)\s+(?:affection|level|friendship(?: level)?|relationship(?: level)?|bond|streak)\b|\bhow close are we\b/i;
 
 const levelFeature: Feature = async (ctx) => {
   if (!LEVEL.test(ctx.text)) return false;
   const a = await getAffection(ctx.botConfig.id, ctx.user);
+  const streak = await getStreak(ctx.botConfig.id, ctx.user);
   const next = nextLevel(a.level);
   const embed = new EmbedBuilder()
     .setColor(EMBED_COLOR)
@@ -21,7 +28,8 @@ const levelFeature: Feature = async (ctx) => {
     .setDescription(
       `${progressBar(a.points)}\n` +
         (next ? `Next: **${next.emoji} ${next.name}**` : "You've reached the top level 💞") +
-        `\n\n💬 ${a.messages} messages · 🧠 ${a.triviaWins} trivia wins`
+        `\n\n💬 ${a.messages} messages · 🧠 ${a.triviaWins} trivia wins` +
+        `\n🔥 Greeting streak: ${streak.streak} day${streak.streak === 1 ? "" : "s"} (best ${streak.best})`
     );
   await replyInCharacter(
     ctx,
@@ -38,12 +46,18 @@ const levelFeature: Feature = async (ctx) => {
  * (Picture search is checked separately, right after these.)
  */
 const FEATURES: Feature[] = [
+  animeAlertFeature, // before reminders: "remind me when Frieren airs"
   reminderFeature,
   birthdayFeature,
+  rememberFeature,
   levelFeature,
   weatherFeature,
   catchUpFeature,
+  pollFeature,
+  giftFeature,
   ...gameFeatures,
+  watchlistFeature,
+  recommendationFeature,
   animeFeature,
 ];
 

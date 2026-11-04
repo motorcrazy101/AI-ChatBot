@@ -13,7 +13,7 @@ import { ConversationMessage } from "./types";
 export const MAX_MEMORIES = 100;
 export const MAX_FACT_LENGTH = 300;
 const MAX_NOTE_CHARS = 1500;
-const RECENT_MESSAGES = 6;
+const RECENT_MESSAGES = 30;
 
 // ---------- owner check ----------
 
@@ -34,6 +34,10 @@ export async function loadOwners(client: Client<true>, botId: string): Promise<v
   }
   owners.set(botId, ids);
   console.log(`[${botId}] Memory owners: ${[...ids].join(", ") || "none found (set OWNER_IDS)"}`);
+}
+
+export function ownerIds(botId: string): string[] {
+  return [...(owners.get(botId) ?? new Set(config.ownerIds))];
 }
 
 export function isOwner(botId: string, userId: string): boolean {

@@ -1,5 +1,6 @@
 import { ActivityType, Client } from "discord.js";
 import { getSettings } from "./settings";
+import { holidayStatus, moodStatus } from "./mood";
 import { currentPhase, phaseStatus } from "./sleep";
 import { BotConfig } from "./types";
 import { StatusSetting, StatusType } from "./types";
@@ -71,11 +72,14 @@ const lastApplied = new Map<string, string>();
 
 /** The status she should show right now (sleep status overrides the normal one). */
 export function currentStatus(botConfig: BotConfig): StatusSetting {
-  return (
-    phaseStatus(currentPhase(botConfig.id)) ??
-    getSettings(botConfig.id).status ??
-    parseStatus(botConfig.defaultStatus)
-  );
+  // Sleeping > holiday > your custom status > today's mood.
+  const sleeping = phaseStatus(currentPhase(botConfig.id));
+  if (sleeping) return sleeping;
+  const holiday = holidayStatus();
+  if (holiday) return holiday;
+  const custom = getSettings(botConfig.id).status ?? parseStatus(botConfig.defaultStatus);
+  if (custom.text) return custom;
+  return moodStatus(botConfig.id);
 }
 
 /** Applies the right status if it changed (called every minute and after /aurora status). */

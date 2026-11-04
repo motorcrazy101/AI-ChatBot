@@ -47,7 +47,8 @@ export function parseAnimeRequest(text: string): AnimeRequest | null {
   };
 }
 
-interface JikanEntry {
+export interface JikanEntry {
+  mal_id: number;
   url: string;
   title: string;
   title_english?: string | null;
@@ -94,7 +95,7 @@ function strongMatch(query: string, entry: JikanEntry): boolean {
   });
 }
 
-async function search(request: AnimeRequest): Promise<JikanEntry | null> {
+export async function search(request: AnimeRequest): Promise<JikanEntry | null> {
   const { data } = await axios.get(`https://api.jikan.moe/v4/${request.kind}`, {
     params: { q: request.query, limit: 10, sfw: true, order_by: "members", sort: "desc" },
     timeout: 12_000,

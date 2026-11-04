@@ -71,6 +71,69 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS reminders_due ON reminders (delivered, due_at);
 
+  ALTER TABLE user_affection ADD COLUMN IF NOT EXISTS streak INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE user_affection ADD COLUMN IF NOT EXISTS best_streak INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE user_affection ADD COLUMN IF NOT EXISTS last_checkin TEXT;
+
+  CREATE TABLE IF NOT EXISTS user_notes (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_id     TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    user_name  TEXT NOT NULL,
+    note       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS user_notes_user ON user_notes (bot_id, user_id);
+  CREATE INDEX IF NOT EXISTS chat_logs_bot_user_time ON chat_logs (bot_id, user_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS confessions (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_id     TEXT NOT NULL,
+    guild_id   TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'pending',
+    number     INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+
+  CREATE TABLE IF NOT EXISTS polls (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_id     TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    question   TEXT NOT NULL,
+    options    JSONB NOT NULL,
+    ends_at    TIMESTAMPTZ NOT NULL,
+    closed     BOOLEAN NOT NULL DEFAULT false
+  );
+
+  CREATE TABLE IF NOT EXISTS anime_alerts (
+    id             BIGSERIAL PRIMARY KEY,
+    bot_id         TEXT NOT NULL,
+    user_id        TEXT NOT NULL,
+    user_name      TEXT NOT NULL,
+    channel_id     TEXT NOT NULL,
+    anilist_id     INTEGER NOT NULL,
+    title          TEXT NOT NULL,
+    site_url       TEXT,
+    next_episode   INTEGER,
+    next_airing_at TIMESTAMPTZ,
+    UNIQUE (bot_id, user_id, anilist_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS watchlist (
+    id            BIGSERIAL PRIMARY KEY,
+    bot_id        TEXT NOT NULL,
+    scope         TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    url           TEXT,
+    added_by      TEXT NOT NULL,
+    added_by_name TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS watchlist_unique ON watchlist (bot_id, scope, lower(title));
+
   CREATE TABLE IF NOT EXISTS birthdays (
     bot_id           TEXT NOT NULL,
     user_id          TEXT NOT NULL,

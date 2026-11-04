@@ -99,4 +99,12 @@ export interface BotSettings {
   nicknames: Record<string, string[]>;
   /** Servers where replying to her messages doesn't make her answer. */
   repliesOffGuilds: string[];
+  /** A mood forced with /aurora mood set, for one day ("YYYY-MM-DD"). */
+  moodOverride: { date: string; mood: string } | null;
+  /** guildId -> last year the server's anniversary was celebrated. */
+  anniversaryPosted: Record<string, number>;
+  /** guildId -> channelId where approved anonymous confessions are posted. */
+  confessionChannels: Record<string, string>;
+  /** Whether confessions wait for the owner's approval before posting. */
+  confessionApproval: boolean;
 }

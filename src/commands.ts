@@ -16,12 +16,13 @@ import { isDbReady, pool } from "./db";
 import { levelFor, topAffection } from "./affection";
 import { allBirthdays } from "./birthdays";
 import { isOwner, MAX_FACT_LENGTH, MAX_MEMORIES } from "./memory";
+import { currentMood, moodByKey, MOODS } from "./mood";
 import { describeStatus, parseStatus, refreshPresence } from "./presence";
 import { generateReply, sendText } from "./respond";
 import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler";
 import { getSettings, toggleInList, updateSettings } from "./settings";
 import { currentPhase } from "./sleep";
-import { MONTHS } from "./time";
+import { MONTHS, zonedParts } from "./time";
 import { BotConfig, ReplyLength, ScheduleDays, StatusType } from "./types";
 import { welcomeMember } from "./welcome";
 
@@ -280,6 +281,54 @@ function buildCommand(name: string, botName: string) {
             .setDescription("Make her forget a fact (owner only)")
             .addIntegerOption((o) => o.setName("id").setDescription("Number from the list").setRequired(true))
         )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("confessions")
+        .setDescription("Anonymous confessions members DM her")
+        .addSubcommand((s) =>
+          s
+            .setName("on")
+            .setDescription("Post approved confessions in a channel")
+            .addChannelOption((o) =>
+              o
+                .setName("channel")
+                .setDescription("Where to post (default: this channel)")
+                .addChannelTypes(...POSTABLE_CHANNELS)
+            )
+        )
+        .addSubcommand((s) => s.setName("off").setDescription("Turn confessions off in this server"))
+        .addSubcommand((s) =>
+          s
+            .setName("approval")
+            .setDescription("Whether the bot owner must approve each confession first")
+            .addStringOption((o) =>
+              o
+                .setName("state")
+                .setDescription("on = owner approves first (safer)")
+                .setRequired(true)
+                .addChoices({ name: "On (recommended)", value: "on" }, { name: "Off", value: "off" })
+            )
+        )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("mood")
+        .setDescription("Her mood today")
+        .addSubcommand((s) => s.setName("show").setDescription("See her mood today"))
+        .addSubcommand((s) =>
+          s
+            .setName("set")
+            .setDescription("Force a mood for the rest of today")
+            .addStringOption((o) =>
+              o
+                .setName("mood")
+                .setDescription("Her mood")
+                .setRequired(true)
+                .addChoices(...MOODS.map((m) => ({ name: `${m.emoji} ${m.key}`, value: m.key })))
+            )
+        )
+        .addSubcommand((s) => s.setName("reset").setDescription("Go back to her natural mood for today"))
     )
     .addSubcommandGroup((g) =>
       g
@@ -548,6 +597,54 @@ async function runAction(
       }
       return memoryAction(action, interaction, botId, botName);
 
+    // ---- confessions ----
+    case "confessions on": {
+      const channelId = interaction.options.getChannel("channel")?.id ?? here;
+      await updateSettings(botId, (s) => {
+        s.confessionChannels[guildId] = channelId;
+      });
+      const approval = getSettings(botId).confessionApproval;
+      return (
+        `🤫 Confessions are on! Members can DM ${botName} \`confess: ...\` and it gets posted anonymously in ${channelMention(channelId)}` +
+        `${approval ? " after the bot owner approves it (they get Approve / Reject buttons in DMs)." : " right away (no approval)."}${persistNote}`
+      );
+    }
+    case "confessions off":
+      await updateSettings(botId, (s) => {
+        delete s.confessionChannels[guildId];
+      });
+      return `Confessions turned off in this server.${persistNote}`;
+    case "confessions approval": {
+      const on = interaction.options.getString("state", true) === "on";
+      await updateSettings(botId, (s) => {
+        s.confessionApproval = on;
+      });
+      return on
+        ? `✅ Every confession now waits for the bot owner's approval.${persistNote}`
+        : `⚠️ Confessions now post immediately without approval. Keep an eye on them!${persistNote}`;
+    }
+
+    // ---- mood ----
+    case "mood show": {
+      const { mood, lifted, forced } = currentMood(botId);
+      return `${mood.emoji} ${botName} is feeling **${mood.key}** today${lifted ? " (people cheered her up!)" : forced ? " (set by an admin)" : ""}.`;
+    }
+    case "mood set": {
+      const key = interaction.options.getString("mood", true);
+      await updateSettings(botId, (s) => {
+        s.moodOverride = { date: zonedParts().date, mood: key };
+      });
+      refreshPresence(client, botConfig, true);
+      const mood = moodByKey(key);
+      return `${mood?.emoji ?? ""} ${botName} is now **${key}** for the rest of today.${persistNote}`;
+    }
+    case "mood reset":
+      await updateSettings(botId, (s) => {
+        s.moodOverride = null;
+      });
+      refreshPresence(client, botConfig, true);
+      return `${botName} is back to her natural mood for today: **${currentMood(botId).mood.key}**.`;
+
     // ---- replies ----
     case "replies on":
       await updateSettings(botId, (s) => toggleInList(s.repliesOffGuilds, guildId, false));
@@ -664,6 +761,8 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Reactions: ${s.reactionChance}% · ${s.reactionEmojis.join(" ") || "no emojis"}`,
     `• Welcome channel: ${welcome ? channelMention(welcome) : "off"}`,
     `• Scheduled posts: ${scheduleCount}`,
+    `• Mood today: ${currentMood(botConfig.id).mood.emoji} ${currentMood(botConfig.id).mood.key}`,
+    `• Confessions: ${s.confessionChannels[guildId] ? `${channelMention(s.confessionChannels[guildId])} (${s.confessionApproval ? "owner approves" : "no approval"})` : "off"}`,
     `• Answers replies to her messages: ${s.repliesOffGuilds.includes(guildId) ? "off" : "on"}`,
     `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,

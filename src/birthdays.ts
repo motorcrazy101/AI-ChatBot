@@ -4,8 +4,8 @@ import { logBotPost } from "./chatLog";
 import { config } from "./config";
 import { initDb, isDbReady, pool } from "./db";
 import { EMBED_COLOR, Feature, replyInCharacter, replyPlain } from "./featureKit";
-import { canPostIn, generateReply, ReplyChannel } from "./respond";
-import { getSettings } from "./settings";
+import { canPostIn, generateReply, ReplyChannel, sendText } from "./respond";
+import { getSettings, saveSettings } from "./settings";
 import { daysInMonth, minutesOfDay, MONTHS, zonedParts } from "./time";
 import { BotConfig } from "./types";
 
@@ -15,7 +15,8 @@ import { BotConfig } from "./types";
  */
 
 const SET = /\bmy (?:birthday|bday|b-day|birth day)(?:\s+is(?:\s+on)?|'s(?:\s+on)?|\s+falls on|\s+on|:)\s+(.+)/i;
-const ASK = /\b(?:when(?:'s| is) my (?:birthday|bday)|do you (?:know|remember) (?:when )?my (?:birthday|bday))\b/i;
+const ASK =
+  /\b(?:(?:when|what)(?:'s|s| is| was)?\s+my\s+(?:birthday|bday|b-day)|(?:do|did) you (?:know|remember|recall) (?:when |what )?my (?:birthday|bday|b-day)(?: is)?|my (?:birthday|bday)\s*\?|remember my (?:birthday|bday)\s*\?)/i;
 const FORGET = /\b(?:forget|delete|remove) my (?:birthday|bday)\b/i;
 
 const MONTH_LOOKUP: Record<string, number> = {};
@@ -133,10 +134,15 @@ export const birthdayFeature: Feature = async (ctx) => {
       await replyPlain(ctx, "You haven't told me yet! Say something like *my birthday is May 5*.");
       return true;
     }
+    const date = label(saved.month, saved.day);
+    const embed = new EmbedBuilder()
+      .setColor(EMBED_COLOR)
+      .setDescription(`🎂 ${ctx.user.name}'s birthday: **${date}**`);
     await replyInCharacter(
       ctx,
-      `${ctx.user.name} asked if you remember their birthday. It's ${label(saved.month, saved.day)}. Answer in character, short.`,
-      { fallback: `Of course! It's ${label(saved.month, saved.day)} 🎂` }
+      `${ctx.user.name} asked if you remember their birthday. You DO remember: it's ${date}. ` +
+        `Tell them it's ${date} in character, in one short sentence. Don't say you forgot.`,
+      { embed, fallback: `Of course! It's ${date} 🎂`, logExtra: `[birthday] ${date}` }
     );
     return true;
   }
@@ -262,3 +268,44 @@ export function startBirthdayLoop(client: Client, botConfig: BotConfig): void {
       });
   }, 60_000).unref();
 }
+
+// ---------- server anniversaries ----------
+
+/** Once a day after BIRTHDAY_TIME: celebrate servers whose creation date is today. */
+export function startAnniversaryLoop(client: Client, botConfig: BotConfig): void {
+  setInterval(() => {
+    if (!client.isReady()) return;
+    const now = zonedParts();
+    if (minutesOfDay(now.time) < minutesOfDay(config.birthdayTime)) return;
+    const settings = getSettings(botConfig.id);
+
+    for (const guild of client.guilds.cache.values()) {
+      const created = zonedParts(guild.createdAt);
+      const years = now.year - created.year;
+      if (years < 1 || created.month !== now.month || created.day !== now.day) continue;
+      if (settings.anniversaryPosted[guild.id] === now.year) continue;
+      settings.anniversaryPosted[guild.id] = now.year;
+      void saveSettings(botConfig.id);
+
+      const channelId =
+        settings.birthdayChannels[guild.id] ?? settings.welcomeChannels[guild.id] ?? guild.systemChannelId;
+      if (!channelId) continue;
+      void (async () => {
+        const channel = (await guild.channels.fetch(channelId).catch(() => null)) as ReplyChannel | null;
+        if (!channel || !channel.isTextBased() || !canPostIn(channel)) return;
+        const reply = await generateReply(client, botConfig, channel, {
+          username: "Server",
+          text: `(Today is the server "${guild.name}"'s ${years}${ordinal(years)} birthday! Celebrate it with everyone in character, 2-3 sentences.)`,
+        }).catch(() => null);
+        const sent = await sendText(channel, `🎉 ${reply ?? `Happy ${years}${ordinal(years)} birthday, ${guild.name}!`}`);
+        for (const post of sent) logBotPost(botConfig.id, client.user.displayName, post, "birthday");
+      })().catch((err) => console.error(`[${botConfig.id}] Anniversary post failed:`, err));
+    }
+  }, 60_000).unref();
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return "th";
+  return ["th", "st", "nd", "rd"][n % 10] ?? "th";
+}
+

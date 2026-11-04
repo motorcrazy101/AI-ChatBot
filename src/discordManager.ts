@@ -8,12 +8,16 @@ import {
 import { config } from "./config";
 import { botChainTooLong, pruneChains, recordMessage } from "./botChain";
 import { logBotPost, logIncoming, logOutgoing } from "./chatLog";
-import { addAffection, AffectionChange } from "./affection";
-import { startBirthdayLoop } from "./birthdays";
+import { addAffection, AffectionChange, checkIn, isGreeting } from "./affection";
+import { startAnimeAlertLoop } from "./animeAlerts";
+import { startAnniversaryLoop, startBirthdayLoop } from "./birthdays";
 import { handleCommand, registerCommands } from "./commands";
+import { handleConfessionButton, handleConfessionDm } from "./confessions";
 import { FeatureContext, stripBotName } from "./featureKit";
 import { runFeatures } from "./features";
 import { loadOwners } from "./memory";
+import { liftMood } from "./mood";
+import { startPollLoop } from "./polls";
 import { checkTriviaAnswer } from "./games";
 import { handleImageRequest, parseImageRequest } from "./imageSearch";
 import { refreshPresence } from "./presence";
@@ -29,6 +33,7 @@ import {
 import { startReminderLoop } from "./reminders";
 import { startScheduler } from "./scheduler";
 import { currentPhase } from "./sleep";
+import { addDays, zonedParts } from "./time";
 import { getSettings, settingsLoaded } from "./settings";
 import { welcomeMember } from "./welcome";
 import { BotConfig } from "./types";
@@ -147,10 +152,47 @@ async function handleMessage(
 
   const botName = botDisplayName(client, channel);
   const fromPerson = !chimingIn && !message.author.bot;
-  if (!chimingIn) logIncoming(botConfig.id, botName, message);
 
-  // Talking to her slowly raises your affection level.
+  // "confess: ..." in a DM → anonymous confession (not saved in the chat log).
+  if (fromPerson && channel.isDMBased()) {
+    try {
+      if (await handleConfessionDm(message, client, botConfig)) return;
+    } catch (error) {
+      console.error(`[${botConfig.id}] Confession failed:`, error);
+      await message.reply("Something went wrong with that confession 😣 Try again later.").catch(() => undefined);
+      return;
+    }
+  }
+
+  if (!chimingIn) logIncoming(botConfig.id, botName, message);
+  const text = stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]);
+
+  // Talking to her slowly raises your affection level and cheers her up.
   const affection = fromPerson ? await addAffection(botConfig.id, user, "chat") : null;
+  if (fromPerson) liftMood(botConfig.id, 1);
+
+  // Daily good morning / good night streaks.
+  const extraNotes: string[] = [];
+  let streakMilestone: number | null = null;
+  if (fromPerson && isGreeting(text)) {
+    const now = zonedParts();
+    const [y, m, d] = addDays(now.year, now.month, now.day, -1);
+    const yesterday = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const streak = await checkIn(botConfig.id, user, now.date, yesterday);
+    if (streak.counted) {
+      liftMood(botConfig.id, 2);
+      if (streak.milestone) {
+        streakMilestone = streak.streak;
+        extraNotes.push(
+          `${user.name} has greeted you ${streak.streak} days in a row — that's a milestone! Celebrate it in your reply.`
+        );
+      } else if (streak.streak >= 2) {
+        extraNotes.push(`${user.name} has greeted you ${streak.streak} days in a row (you can mention the streak).`);
+      } else if (streak.broken) {
+        extraNotes.push(`${user.name} had a ${streak.broken}-day streak of greeting you but missed a day — tease them a little.`);
+      }
+    }
+  }
 
   // Features: reminders, birthdays, weather, games, anime lookup, pictures...
   if (fromPerson) {
@@ -162,7 +204,7 @@ async function handleMessage(
         botConfig,
         botName,
         user,
-        text: stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]),
+        text,
       };
       let handled = await runFeatures(ctx);
       if (!handled) {
@@ -187,7 +229,7 @@ async function handleMessage(
 
   const stopTyping = startTyping(channel, botConfig.id);
   try {
-    const reply = await generateReply(client, botConfig, channel, undefined, fromPerson ? user : undefined);
+    const reply = await generateReply(client, botConfig, channel, undefined, fromPerson ? user : undefined, extraNotes);
     stopTyping();
     if (!reply) return;
 
@@ -201,6 +243,11 @@ async function handleMessage(
     for (const post of sent) logOutgoing(botConfig.id, botName, post, message);
 
     await announceLevelUp(channel, botConfig, botName, user, affection);
+    if (streakMilestone) {
+      await channel
+        .send({ content: `🔥 **${user.name}** is on a **${streakMilestone}-day** streak with ${botName}!`, allowedMentions: { parse: [] } })
+        .catch(() => undefined);
+    }
 
     // Sometimes add a reaction on top of the reply.
     if (randomPercent(settings.reactionChance)) await reactRandomly(message, botConfig);
@@ -254,9 +301,13 @@ function isDisallowedIntentsError(error: unknown): boolean {
   );
 }
 
-function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
+function buildClient(botConfig: BotConfig, withMembers: boolean, withPresences: boolean): Client {
   const client = new Client({
-    intents: withMembers ? [...BASE_INTENTS, GatewayIntentBits.GuildMembers] : BASE_INTENTS,
+    intents: [
+      ...BASE_INTENTS,
+      ...(withMembers ? [GatewayIntentBits.GuildMembers] : []),
+      ...(withPresences ? [GatewayIntentBits.GuildPresences] : []),
+    ],
     partials: [Partials.Channel, Partials.Message],
   });
 
@@ -268,6 +319,9 @@ function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
     startScheduler(client, botConfig);
     startReminderLoop(client, botConfig);
     startBirthdayLoop(client, botConfig);
+    startAnniversaryLoop(client, botConfig);
+    startPollLoop(client, botConfig);
+    startAnimeAlertLoop(client, botConfig);
 
     // Apply the status once saved settings are loaded, then keep it in sync
     // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).
@@ -285,7 +339,14 @@ function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
   });
 
   client.on("interactionCreate", (interaction) => {
-    if (!client.isReady() || !interaction.isChatInputCommand()) return;
+    if (!client.isReady()) return;
+    if (interaction.isButton()) {
+      handleConfessionButton(interaction, client, botConfig).catch((err) =>
+        console.error(`[${botConfig.id}] Button error:`, err)
+      );
+      return;
+    }
+    if (!interaction.isChatInputCommand()) return;
     handleCommand(interaction, client, botConfig).catch((err) =>
       console.error(`[${botConfig.id}] Command error:`, err)
     );
@@ -306,25 +367,47 @@ function buildClient(botConfig: BotConfig, withMembers: boolean): Client {
   return client;
 }
 
+/**
+ * Optional "privileged" features need switches in the Discord Developer Portal
+ * (Bot → Privileged Gateway Intents):
+ *   Server Members Intent → welcoming new members
+ *   Presence Intent       → noticing what people are playing / listening to
+ * If one is off, log in without it instead of failing, and say how to turn it on.
+ */
+const INTENT_ATTEMPTS: { members: boolean; presences: boolean }[] = [
+  { members: true, presences: true },
+  { members: true, presences: false },
+  { members: false, presences: true },
+  { members: false, presences: false },
+];
+
 async function createBot(botConfig: BotConfig): Promise<Client> {
-  // Welcoming new members needs the "Server Members Intent" switched on in
-  // the Discord Developer Portal. If it isn't, log in without it instead of
-  // failing, and explain how to turn it on.
-  let client = buildClient(botConfig, true);
-  try {
-    await client.login(botConfig.discordBotToken);
-  } catch (error) {
-    if (!isDisallowedIntentsError(error)) throw error;
-    console.warn(
-      `[${botConfig.id}] "Server Members Intent" is off in the Discord Developer Portal, ` +
-        "so welcoming new members is disabled. Turn it on under Bot → Privileged Gateway Intents."
-    );
-    await client.destroy();
-    client = buildClient(botConfig, false);
-    await client.login(botConfig.discordBotToken);
+  let lastError: unknown;
+  for (const attempt of INTENT_ATTEMPTS) {
+    const client = buildClient(botConfig, attempt.members, attempt.presences);
+    try {
+      await client.login(botConfig.discordBotToken);
+      if (!attempt.members) {
+        console.warn(
+          `[${botConfig.id}] "Server Members Intent" is off in the Discord Developer Portal, so welcoming new ` +
+            "members is disabled. Turn it on under Bot → Privileged Gateway Intents."
+        );
+      }
+      if (!attempt.presences) {
+        console.warn(
+          `[${botConfig.id}] "Presence Intent" is off in the Discord Developer Portal, so she can't see what ` +
+            "people are playing or listening to. Turn it on under Bot → Privileged Gateway Intents."
+        );
+      }
+      activeBots.set(botConfig.id, client);
+      return client;
+    } catch (error) {
+      await client.destroy().catch(() => undefined);
+      if (!isDisallowedIntentsError(error)) throw error;
+      lastError = error;
+    }
   }
-  activeBots.set(botConfig.id, client);
-  return client;
+  throw lastError;
 }
 
 export async function initializeAllBots(botConfigs: BotConfig[]): Promise<number> {

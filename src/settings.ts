@@ -34,6 +34,10 @@ function defaults(): BotSettings {
     nextMemoryId: 1,
     nicknames: {},
     repliesOffGuilds: [],
+    moodOverride: null,
+    anniversaryPosted: {},
+    confessionChannels: {},
+    confessionApproval: true,
   };
 }
 

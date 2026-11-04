@@ -33,6 +33,11 @@ interface AffectionRecord {
   messages: number;
   triviaWins: number;
   lastChatPointAt: number;
+  /** Days in a row they said good morning/night. */
+  streak: number;
+  bestStreak: number;
+  /** "YYYY-MM-DD" of their last check-in. */
+  lastCheckin: string | null;
 }
 
 const cache = new Map<string, AffectionRecord>();
@@ -53,18 +58,38 @@ async function load(botId: string, userId: string, userName: string): Promise<Af
   const cached = cache.get(k);
   if (cached) return cached;
 
-  const record: AffectionRecord = { userName, points: 0, messages: 0, triviaWins: 0, lastChatPointAt: 0 };
+  const record: AffectionRecord = {
+    userName,
+    points: 0,
+    messages: 0,
+    triviaWins: 0,
+    lastChatPointAt: 0,
+    streak: 0,
+    bestStreak: 0,
+    lastCheckin: null,
+  };
   await initDb();
   if (pool && isDbReady()) {
     try {
-      const { rows } = await pool.query<{ points: number; messages: number; trivia_wins: number }>(
-        "SELECT points, messages, trivia_wins FROM user_affection WHERE bot_id = $1 AND user_id = $2",
+      const { rows } = await pool.query<{
+        points: number;
+        messages: number;
+        trivia_wins: number;
+        streak: number;
+        best_streak: number;
+        last_checkin: string | null;
+      }>(
+        `SELECT points, messages, trivia_wins, streak, best_streak, last_checkin
+           FROM user_affection WHERE bot_id = $1 AND user_id = $2`,
         [botId, userId]
       );
       if (rows[0]) {
         record.points = rows[0].points;
         record.messages = rows[0].messages;
         record.triviaWins = rows[0].trivia_wins;
+        record.streak = rows[0].streak ?? 0;
+        record.bestStreak = rows[0].best_streak ?? 0;
+        record.lastCheckin = rows[0].last_checkin ?? null;
       }
     } catch (err) {
       console.error("[affection] Could not load:", (err as Error).message);
@@ -78,12 +103,24 @@ async function save(botId: string, userId: string, record: AffectionRecord): Pro
   if (!pool || !isDbReady()) return;
   try {
     await pool.query(
-      `INSERT INTO user_affection (bot_id, user_id, user_name, points, messages, trivia_wins, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now())
+      `INSERT INTO user_affection
+         (bot_id, user_id, user_name, points, messages, trivia_wins, streak, best_streak, last_checkin, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
        ON CONFLICT (bot_id, user_id) DO UPDATE
          SET user_name = EXCLUDED.user_name, points = EXCLUDED.points, messages = EXCLUDED.messages,
-             trivia_wins = EXCLUDED.trivia_wins, updated_at = now()`,
-      [botId, userId, record.userName, record.points, record.messages, record.triviaWins]
+             trivia_wins = EXCLUDED.trivia_wins, streak = EXCLUDED.streak, best_streak = EXCLUDED.best_streak,
+             last_checkin = EXCLUDED.last_checkin, updated_at = now()`,
+      [
+        botId,
+        userId,
+        record.userName,
+        record.points,
+        record.messages,
+        record.triviaWins,
+        record.streak,
+        record.bestStreak,
+        record.lastCheckin,
+      ]
     );
   } catch (err) {
     console.error("[affection] Could not save:", (err as Error).message);
@@ -103,7 +140,7 @@ export interface AffectionChange {
 export async function addAffection(
   botId: string,
   user: { id: string; name: string },
-  reason: "chat" | "trivia" | "birthday"
+  reason: "chat" | "trivia" | "birthday" | "streak" | "gift" | "gift-loved"
 ): Promise<AffectionChange> {
   const record = await load(botId, user.id, user.name);
   record.userName = user.name;
@@ -119,8 +156,12 @@ export async function addAffection(
   } else if (reason === "trivia") {
     record.points += 5;
     record.triviaWins++;
-  } else {
+  } else if (reason === "birthday") {
     record.points += 10;
+  } else if (reason === "gift-loved") {
+    record.points += 5;
+  } else {
+    record.points += 2; // streak check-in or a regular gift
   }
 
   void save(botId, user.id, record);
@@ -176,4 +217,59 @@ export function progressBar(points: number): string {
   if (!next) return "▰▰▰▰▰▰▰▰▰▰ MAX";
   const filled = Math.floor(((points - level.minPoints) / (next.minPoints - level.minPoints)) * 10);
   return `${"▰".repeat(filled)}${"▱".repeat(10 - filled)} ${points}/${next.minPoints}`;
+}
+
+// ---------- daily good morning / good night streaks ----------
+
+const GREETING = /\b(good\s*morning|g'?morning|mornin'?|gm|good\s*night|goodnight|g'?night|night night|nighty night|gn|good\s*evening|good\s*afternoon)\b/i;
+const MILESTONES = [3, 7, 14, 30, 50, 100, 200, 365];
+
+export function isGreeting(text: string): boolean {
+  return GREETING.test(text);
+}
+
+export interface CheckIn {
+  /** False if they already checked in today (no change). */
+  counted: boolean;
+  streak: number;
+  bestStreak: number;
+  milestone: boolean;
+  /** Their old streak, if it just broke. */
+  broken: number;
+}
+
+/**
+ * Counts a good morning / good night toward their daily streak (once a day).
+ * `today` and `yesterday` are "YYYY-MM-DD" in the bot's time zone.
+ */
+export async function checkIn(
+  botId: string,
+  user: { id: string; name: string },
+  today: string,
+  yesterday: string
+): Promise<CheckIn> {
+  const record = await load(botId, user.id, user.name);
+  if (record.lastCheckin === today) {
+    return { counted: false, streak: record.streak, bestStreak: record.bestStreak, milestone: false, broken: 0 };
+  }
+  const continuing = record.lastCheckin === yesterday;
+  const broken = !continuing && record.streak > 1 ? record.streak : 0;
+  record.streak = continuing ? record.streak + 1 : 1;
+  record.bestStreak = Math.max(record.bestStreak, record.streak);
+  record.lastCheckin = today;
+  record.userName = user.name;
+  record.points += 2;
+  void save(botId, user.id, record);
+  return {
+    counted: true,
+    streak: record.streak,
+    bestStreak: record.bestStreak,
+    milestone: MILESTONES.includes(record.streak),
+    broken,
+  };
+}
+
+export async function getStreak(botId: string, user: { id: string; name: string }): Promise<{ streak: number; best: number; last: string | null }> {
+  const record = await load(botId, user.id, user.name);
+  return { streak: record.streak, best: record.bestStreak, last: record.lastCheckin };
 }
