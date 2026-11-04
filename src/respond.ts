@@ -10,8 +10,9 @@ import { affectionNote } from "./affection";
 import { config } from "./config";
 import { callKindroidAI } from "./kindroidAPI";
 import { fetchConversation } from "./messageFetch";
+import { getSettings } from "./settings";
 import { sleepNote } from "./sleep";
-import { BotConfig, ConversationMessage } from "./types";
+import { BotConfig, ConversationMessage, ReplyLength } from "./types";
 
 /** Shared helpers for anything that makes the bot talk. */
 
@@ -76,17 +77,60 @@ export async function generateReply(
   forUser?: { id: string; name: string }
 ): Promise<string | null> {
   const conversation = await fetchConversation(channel, client.user.id, config.contextMessageLimit);
+  const length = getSettings(botConfig.id).replyLength;
 
-  // Hints about the time of day (sleepy at night) and how close she is with this person.
-  if (forUser) {
-    const notes = [sleepNote(botConfig.id), affectionNote(botConfig.id, forUser)].filter(Boolean);
-    if (notes.length) conversation.push({ username: "Server", text: `(${notes.join(" ")})` });
+  // Hints about reply length, the time of day (sleepy at night) and how close she is with this person.
+  const notes = [
+    LENGTH_HINTS[length],
+    forUser ? sleepNote(botConfig.id) : null,
+    forUser ? affectionNote(botConfig.id, forUser) : null,
+  ].filter(Boolean);
+  if (extra) {
+    conversation.push({ ...extra, text: notes.length ? `${extra.text} (${notes.join(" ")})` : extra.text });
+  } else if (notes.length) {
+    conversation.push({ username: "Server", text: `(${notes.join(" ")})` });
   }
-  if (extra) conversation.push(extra);
   if (conversation.length === 0) return null;
 
   const result = await callKindroidAI(botConfig.sharedAiCode, conversation, botConfig.enableFilter);
-  return result.type === "success" ? result.reply : null;
+  return result.type === "success" ? shortenReply(result.reply, LENGTH_LIMITS[length]) : null;
+}
+
+/** Asked of Kindroid for each reply length setting. */
+const LENGTH_HINTS: Record<ReplyLength, string | null> = {
+  short: "Keep your reply short: 1 to 3 sentences, like a quick Discord message.",
+  medium: "Keep your reply fairly brief: one short paragraph at most.",
+  long: null,
+  off: null,
+};
+
+/** Hard character limits, used if Kindroid still writes too much. */
+export const LENGTH_LIMITS: Record<ReplyLength, number> = {
+  short: 450,
+  medium: 900,
+  long: 1800,
+  off: 0,
+};
+
+/**
+ * Trims a reply to about `max` characters, ending at the end of a full
+ * sentence (or action) so she never stops mid-word. 0 = no limit.
+ */
+export function shortenReply(text: string, max: number): string {
+  if (!max || text.length <= max) return text;
+  const window = text.slice(0, max);
+
+  // Last place a sentence, *action*, or line ends.
+  let cut = -1;
+  const ending = /[.!?…~)](?=\s|$)|\*(?=\s|$)|\n/g;
+  let match: RegExpExecArray | null;
+  while ((match = ending.exec(window)) !== null) cut = match.index + (match[0] === "\n" ? 0 : 1);
+
+  let result = cut >= max * 0.4 ? window.slice(0, cut) : `${window.slice(0, window.lastIndexOf(" ")).trimEnd()}…`;
+  result = result.trimEnd();
+  // Don't leave an *action* half-open.
+  if ((result.match(/\*/g) ?? []).length % 2 === 1) result += "*";
+  return result;
 }
 
 /**

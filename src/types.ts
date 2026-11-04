@@ -57,6 +57,8 @@ export interface ScheduledPost {
   lastRunDate?: string;
 }
 
+export type ReplyLength = "short" | "medium" | "long" | "off";
+
 export interface BotSettings {
   /** Channels where the bot says nothing at all. */
   quietChannels: string[];
@@ -79,4 +81,6 @@ export interface BotSettings {
   sleep: { enabled: boolean; bedtime: string; wake: string };
   /** guildId -> channelId where birthday wishes are posted. */
   birthdayChannels: Record<string, string>;
+  /** How long her replies can be. */
+  replyLength: ReplyLength;
 }

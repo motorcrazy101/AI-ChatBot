@@ -29,6 +29,7 @@ function defaults(): BotSettings {
       wake: config.sleepWake,
     },
     birthdayChannels: {},
+    replyLength: config.replyLength,
   };
 }
 

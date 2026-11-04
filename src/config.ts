@@ -129,6 +129,10 @@ function loadConfig() {
     birthdayTime: clockFromEnv("BIRTHDAY_TIME", "09:00"),
     /** "fahrenheit" or "celsius". */
     weatherUnits: process.env.WEATHER_UNITS?.trim().toLowerCase() === "celsius" ? "celsius" : "fahrenheit",
+    /** Default reply length: short, medium, long or off (change with /aurora length). */
+    replyLength: (["short", "medium", "long", "off"].includes(process.env.REPLY_LENGTH?.trim().toLowerCase() ?? "")
+      ? process.env.REPLY_LENGTH!.trim().toLowerCase()
+      : "short") as "short" | "medium" | "long" | "off",
     /** Used when someone asks "what's the weather?" without a place. */
     weatherDefaultLocation: process.env.WEATHER_LOCATION?.trim() || "",
   };

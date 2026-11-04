@@ -18,7 +18,7 @@ import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler
 import { getSettings, toggleInList, updateSettings } from "./settings";
 import { currentPhase } from "./sleep";
 import { MONTHS } from "./time";
-import { BotConfig, ScheduleDays, StatusType } from "./types";
+import { BotConfig, ReplyLength, ScheduleDays, StatusType } from "./types";
 import { welcomeMember } from "./welcome";
 
 /**
@@ -75,6 +75,23 @@ function buildCommand(name: string, botName: string) {
         .addUserOption((o) => o.setName("user").setDescription("Who to unblock").setRequired(true))
     )
     .addSubcommand((s) => s.setName("blocklist").setDescription("Show everyone she ignores"))
+    .addSubcommand((s) =>
+      s
+        .setName("length")
+        .setDescription("How long her replies are")
+        .addStringOption((o) =>
+          o
+            .setName("size")
+            .setDescription("Reply length")
+            .setRequired(true)
+            .addChoices(
+              { name: "Short (1-3 sentences)", value: "short" },
+              { name: "Medium (a short paragraph)", value: "medium" },
+              { name: "Long (a few paragraphs)", value: "long" },
+              { name: "No limit", value: "off" }
+            )
+        )
+    )
     .addSubcommand((s) =>
       s
         .setName("status")
@@ -456,6 +473,21 @@ async function runAction(
       return `Posted scheduled message #${id} in ${channelMention(post.channelId)}.`;
     }
 
+    // ---- reply length ----
+    case "length": {
+      const size = interaction.options.getString("size", true) as ReplyLength;
+      await updateSettings(botId, (s) => {
+        s.replyLength = size;
+      });
+      const labels: Record<ReplyLength, string> = {
+        short: "short (1-3 sentences)",
+        medium: "medium (a short paragraph)",
+        long: "long (a few paragraphs)",
+        off: "no limit",
+      };
+      return `📏 Replies are now **${labels[size]}**.${persistNote}`;
+    }
+
     // ---- sleep schedule ----
     case "sleep on":
     case "sleep off": {
@@ -534,6 +566,7 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Reactions: ${s.reactionChance}% · ${s.reactionEmojis.join(" ") || "no emojis"}`,
     `• Welcome channel: ${welcome ? channelMention(welcome) : "off"}`,
     `• Scheduled posts: ${scheduleCount}`,
+    `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
     `• Saved to database: ${isDbReady() ? "yes" : "no (settings reset on restart)"}`,
