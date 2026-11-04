@@ -60,6 +60,7 @@ Server Settings → Integrations → the bot.
 | `/aurora reactions chance` / `emojis` | How often she reacts, and with which emojis |
 | `/aurora welcome on` / `off` / `test` | Welcome new members in a channel |
 | `/aurora schedule add` / `list` / `remove` / `test` | Scheduled posts |
+| `/aurora length` | How long her replies are (short / medium / long / no limit) |
 | `/aurora sleep on` / `off` / `set` | Her sleep schedule |
 | `/aurora birthdays on` / `off` / `list` | Where birthday wishes go (DMs if none) |
 
