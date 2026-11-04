@@ -1,6 +1,7 @@
 import {
   ApplicationCommandDataResolvable,
   Guild,
+  User,
   ChannelType,
   ChatInputCommandInteraction,
   Client,
@@ -9,12 +10,14 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from "discord.js";
+import { logBotPost } from "./chatLog";
 import { config } from "./config";
 import { isDbReady, pool } from "./db";
 import { levelFor, topAffection } from "./affection";
 import { allBirthdays } from "./birthdays";
 import { isOwner, MAX_FACT_LENGTH, MAX_MEMORIES } from "./memory";
 import { describeStatus, parseStatus, refreshPresence } from "./presence";
+import { generateReply, sendText } from "./respond";
 import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler";
 import { getSettings, toggleInList, updateSettings } from "./settings";
 import { currentPhase } from "./sleep";
@@ -76,6 +79,19 @@ function buildCommand(name: string, botName: string) {
         .addUserOption((o) => o.setName("user").setDescription("Who to unblock").setRequired(true))
     )
     .addSubcommand((s) => s.setName("blocklist").setDescription("Show everyone she ignores"))
+    .addSubcommand((s) =>
+      s
+        .setName("dm")
+        .setDescription("Have her DM someone in her own words (bot owner only)")
+        .addUserOption((o) => o.setName("person").setDescription("Who to DM").setRequired(true))
+        .addStringOption((o) =>
+          o
+            .setName("about")
+            .setDescription("What the DM should say, e.g. remind her about movie night at 8")
+            .setMaxLength(500)
+            .setRequired(true)
+        )
+    )
     .addSubcommand((s) =>
       s
         .setName("length")
@@ -523,6 +539,18 @@ async function runAction(
       }
       return memoryAction(action, interaction, botId, botName);
 
+    // ---- DM someone (owner only) ----
+    case "dm": {
+      if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can have her DM people.";
+      const target = interaction.options.getUser("person", true);
+      const about = interaction.options.getString("about", true).trim();
+      if (target.id === client.user.id) return "She can't DM herself 😅";
+      if (target.bot) return "She can only DM people, not other bots.";
+      const member = await interaction.guild.members.fetch(target.id).catch(() => null);
+      const result = await sendOwnerDm(client, botConfig, target, member?.displayName ?? target.displayName, about);
+      return result;
+    }
+
     // ---- reply length ----
     case "length": {
       const size = interaction.options.getString("size", true) as ReplyLength;
@@ -621,6 +649,47 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
     `• Saved to database: ${isDbReady() ? "yes" : "no (settings reset on restart)"}`,
   ].join("\n");
+}
+
+/** Has her write and send a DM in her own words. Returns a status message for the owner. */
+async function sendOwnerDm(
+  client: Client<true>,
+  botConfig: BotConfig,
+  target: User,
+  targetName: string,
+  about: string
+): Promise<string> {
+  const dm = await target.createDM().catch(() => null);
+  if (!dm) return `❌ Couldn't open a DM with ${userMention(target.id)}.`;
+
+  const text = await generateReply(
+    client,
+    botConfig,
+    dm,
+    {
+      username: "Server",
+      text:
+        `(You're sending ${targetName} a direct message, reaching out to them yourself. ` +
+        `What the message is about: ${about}. Write the DM in character, speaking directly to ${targetName}.)`,
+    },
+    { id: target.id, name: targetName }
+  ).catch((err) => {
+    console.error(`[${botConfig.id}] DM text from Kindroid failed:`, err);
+    return null;
+  });
+  if (!text) return "😣 She couldn't come up with the message right now (Kindroid is busy). Try again in a minute.";
+
+  try {
+    const sent = await sendText(dm, text);
+    for (const post of sent) logBotPost(botConfig.id, client.user.displayName, post, "dm");
+    return `📨 Sent to ${userMention(target.id)}:\n>>> ${text.slice(0, 1800)}`;
+  } catch (err) {
+    console.warn(`[${botConfig.id}] Could not DM ${target.id}:`, (err as Error).message);
+    return (
+      `❌ Couldn't DM ${userMention(target.id)}. They probably have DMs from server members turned off ` +
+      "(Discord privacy settings), or they don't share a server with her."
+    );
+  }
 }
 
 async function memoryAction(

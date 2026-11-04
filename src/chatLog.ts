@@ -97,7 +97,7 @@ export function logBotPost(
   botId: string,
   botName: string,
   post: Message,
-  kind: "chime-in" | "welcome" | "scheduled" | "game" | "reminder" | "birthday" | "level-up"
+  kind: "chime-in" | "welcome" | "scheduled" | "game" | "reminder" | "birthday" | "level-up" | "dm"
 ): void {
   void save({
     botId,
