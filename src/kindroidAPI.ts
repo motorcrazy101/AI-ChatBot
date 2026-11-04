@@ -14,6 +14,21 @@ function requesterId(username: string): string {
 }
 
 /**
+ * Packs replies tighter for Discord: removes the blank lines between
+ * paragraphs (keeping each action/line on its own line) and stray spaces.
+ */
+export function tidyReply(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+/**
  * Calls the Kindroid AI inference endpoint.
  * Returns { type: "rate_limited" } on HTTP 429, throws on any other failure.
  */
@@ -46,7 +61,7 @@ export async function callKindroidAI(
       throw new Error(data.error || "Kindroid API returned no reply");
     }
 
-    return { type: "success", reply: data.reply };
+    return { type: "success", reply: tidyReply(data.reply) };
   } catch (error) {
     if (axios.isAxiosError<KindroidResponse>(error)) {
       const status = error.response?.status;
