@@ -84,6 +84,7 @@ const SCHEMA = `
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
   CREATE INDEX IF NOT EXISTS user_notes_user ON user_notes (bot_id, user_id);
+  ALTER TABLE user_notes ADD COLUMN IF NOT EXISTS from_dm BOOLEAN NOT NULL DEFAULT false;
   CREATE INDEX IF NOT EXISTS chat_logs_bot_user_time ON chat_logs (bot_id, user_id, created_at);
 
   CREATE TABLE IF NOT EXISTS confessions (

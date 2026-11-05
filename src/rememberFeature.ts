@@ -76,7 +76,7 @@ export const rememberFeature: Feature = async (ctx) => {
     await replyPlain(ctx, "I'd love to, but my long-term memory (the database) isn't connected right now 😣");
     return true;
   }
-  const id = await addUserNote(ctx.botConfig.id, ctx.user, note);
+  const id = await addUserNote(ctx.botConfig.id, ctx.user, note, ctx.channel.isDMBased());
   const embed = new EmbedBuilder()
     .setColor(EMBED_COLOR)
     .setDescription(`🧠 Remembered${id ? ` **#${id}**` : ""}: ${truncate(note, MAX_NOTE_LENGTH)}`)

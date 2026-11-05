@@ -34,12 +34,14 @@ export interface UserNote {
 export async function addUserNote(
   botId: string,
   user: { id: string; name: string },
-  note: string
+  note: string,
+  fromDm = false
 ): Promise<number | null> {
   if (!pool || !(await db())) return null;
+  othersCache = null;
   const { rows } = await pool.query<{ id: string }>(
-    "INSERT INTO user_notes (bot_id, user_id, user_name, note) VALUES ($1, $2, $3, $4) RETURNING id",
-    [botId, user.id, user.name, note.slice(0, MAX_NOTE_LENGTH)]
+    "INSERT INTO user_notes (bot_id, user_id, user_name, note, from_dm) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    [botId, user.id, user.name, note.slice(0, MAX_NOTE_LENGTH), fromDm]
   );
   // Keep only the newest notes per person.
   await pool.query(
@@ -61,6 +63,7 @@ export async function getUserNotes(botId: string, userId: string): Promise<UserN
 
 export async function deleteUserNotes(botId: string, userId: string, noteId?: number): Promise<number> {
   if (!pool || !(await db())) return 0;
+  othersCache = null;
   const result = noteId
     ? await pool.query("DELETE FROM user_notes WHERE bot_id = $1 AND user_id = $2 AND id = $3", [botId, userId, noteId])
     : await pool.query("DELETE FROM user_notes WHERE bot_id = $1 AND user_id = $2", [botId, userId]);
@@ -192,25 +195,72 @@ export function mentionsName(text: string, name: string): boolean {
   ).test(text);
 }
 
+interface PersonInfo {
+  names: Set<string>;
+  displayName: string;
+  birthday?: string;
+  notes: string[];
+}
+
+let othersCache: { botId: string; at: number; people: Map<string, PersonInfo> } | null = null;
+
+/** Birthdays + notes told in servers, for everyone (cached for a minute). */
+async function everyone(botId: string): Promise<Map<string, PersonInfo>> {
+  if (othersCache && othersCache.botId === botId && Date.now() - othersCache.at < 60_000) return othersCache.people;
+  const people = new Map<string, PersonInfo>();
+  const get = (userId: string, name: string) => {
+    let p = people.get(userId);
+    if (!p) {
+      p = { names: new Set(), displayName: name, notes: [] };
+      people.set(userId, p);
+    }
+    p.names.add(name);
+    return p;
+  };
+
+  for (const b of await allKnownBirthdays(botId)) get(b.userId, b.userName).birthday = birthdayLabel(b);
+  if (pool && (await db())) {
+    // Notes told in a DM stay private to that person.
+    const { rows } = await pool.query<{ user_id: string; user_name: string; note: string }>(
+      "SELECT user_id, user_name, note FROM user_notes WHERE bot_id = $1 AND NOT from_dm ORDER BY created_at",
+      [botId]
+    );
+    for (const r of rows) {
+      const p = get(r.user_id, r.user_name);
+      p.displayName = r.user_name;
+      p.notes.push(r.note);
+    }
+  }
+  othersCache = { botId, at: Date.now(), people };
+  return people;
+}
+
 /**
- * Birthdays of other people who are named or @mentioned in the last few
- * messages, so she can answer "when is Douche's birthday?".
+ * What she knows about OTHER people who are named or @mentioned in the last
+ * few messages (their birthday and things they asked her to remember), so
+ * she can answer "what does Douche like?" when someone else asks.
  */
-export async function othersBirthdayNote(
+export async function othersNote(
   botId: string,
   recentText: string,
   speakerId: string | undefined,
   nicknames: Record<string, string[]>
 ): Promise<string | null> {
   try {
-    const list = await allKnownBirthdays(botId);
-    const found = list.filter(
-      (b) =>
-        b.userId !== speakerId &&
-        [b.userName, ...(nicknames[b.userId] ?? [])].some((name) => mentionsName(recentText, name))
-    );
-    if (found.length === 0) return null;
-    return `Birthdays you know: ${found.map((b) => `${b.userName}'s birthday is ${birthdayLabel(b)}`).join("; ")}.`;
+    const people = await everyone(botId);
+    const lines: string[] = [];
+    for (const [userId, p] of people) {
+      if (userId === speakerId) continue; // the speaker's own info comes from longTermNote
+      const names = [...p.names, ...(nicknames[userId] ?? [])];
+      if (!names.some((name) => mentionsName(recentText, name))) continue;
+      const facts = [
+        p.birthday ? `birthday ${p.birthday}` : "",
+        p.notes.length ? `told you: ${p.notes.slice(-8).map((n) => `"${n}"`).join("; ")}` : "",
+      ].filter(Boolean);
+      if (facts.length) lines.push(`${p.displayName} — ${facts.join("; ")}`);
+    }
+    if (lines.length === 0) return null;
+    return `What you remember about people being talked about: ${lines.join(" | ")}.`;
   } catch {
     return null;
   }
@@ -219,4 +269,5 @@ export async function othersBirthdayNote(
 /** Call after a birthday is saved or deleted. */
 export function clearBirthdayCache(): void {
   birthdayCache = null;
+  othersCache = null;
 }
