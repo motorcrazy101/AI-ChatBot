@@ -52,7 +52,11 @@ function escapeRegex(text: string): string {
 
 function mentionsName(text: string, name: string): boolean {
   if (!name.trim()) return false;
-  return new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegex(name.trim())}(?![\\p{L}\\p{N}_])`, "iu").test(text);
+  // Also matches "douche's", "douches" and "douches'".
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegex(name.trim())}(?:'s|’s|s'|s|')?(?![\\p{L}\\p{N}_])`,
+    "iu"
+  ).test(text);
 }
 
 /** Every name someone goes by: saved name + nicknames. */

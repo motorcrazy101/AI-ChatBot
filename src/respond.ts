@@ -9,7 +9,7 @@ import {
 import { affectionNote } from "./affection";
 import { config } from "./config";
 import { callKindroidAI } from "./kindroidAPI";
-import { longTermNote } from "./longTermMemory";
+import { longTermNote, othersBirthdayNote } from "./longTermMemory";
 import { memoryNote } from "./memory";
 import { activityNote, holidayNote, moodNote } from "./mood";
 import { fetchConversation } from "./messageFetch";
@@ -88,6 +88,13 @@ export async function generateReply(
   const background = [
     memoryNote(botConfig.id, extra ? [...conversation, extra] : conversation, forUser),
     forUser ? await longTermNote(botConfig.id, forUser, channel.isDMBased()) : null,
+    // Birthdays of anyone named in the last few messages ("when is Douche's birthday?").
+    await othersBirthdayNote(
+      botConfig.id,
+      [...conversation.slice(-6), ...(extra ? [extra] : [])].map((m) => m.text).join("\n"),
+      forUser?.id,
+      getSettings(botConfig.id).nicknames
+    ),
   ].filter(Boolean);
 
   // What they're playing/listening to right now (needs the Presence Intent).

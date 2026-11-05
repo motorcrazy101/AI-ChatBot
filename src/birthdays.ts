@@ -3,7 +3,8 @@ import { addAffection } from "./affection";
 import { logBotPost } from "./chatLog";
 import { config } from "./config";
 import { initDb, isDbReady, pool } from "./db";
-import { EMBED_COLOR, Feature, replyInCharacter, replyPlain } from "./featureKit";
+import { EMBED_COLOR, Feature, FeatureContext, replyInCharacter, replyPlain } from "./featureKit";
+import { allKnownBirthdays, birthdayLabel, clearBirthdayCache } from "./longTermMemory";
 import { canPostIn, generateReply, ReplyChannel, sendText } from "./respond";
 import { getSettings, saveSettings } from "./settings";
 import { daysInMonth, minutesOfDay, MONTHS, zonedParts } from "./time";
@@ -18,6 +19,9 @@ const SET = /\bmy (?:birthday|bday|b-day|birth day)(?:\s+is(?:\s+on)?|'s(?:\s+on
 const ASK =
   /\b(?:(?:when|what)(?:'s|s| is| was)?\s+my\s+(?:birthday|bday|b-day)|(?:do|did) you (?:know|remember|recall) (?:when |what )?my (?:birthday|bday|b-day)(?: is)?|my (?:birthday|bday)\s*\?|remember my (?:birthday|bday)\s*\?)/i;
 const FORGET = /\b(?:forget|delete|remove) my (?:birthday|bday)\b/i;
+/** "when is Douche's birthday?" / "do you know @Lilly's bday" */
+const ASK_OTHER =
+  /\b(?:(?:when|what)(?:'s|s| is| was)?|do you (?:know|remember|recall)(?: when)?|you know(?: when)?)\s+(.+?)(?:'s|s'|’s|s)\s+(?:birthday|bday|b-day)\b/i;
 
 const MONTH_LOOKUP: Record<string, number> = {};
 MONTHS.forEach((name, i) => {
@@ -63,6 +67,7 @@ async function useDb(): Promise<boolean> {
 
 async function saveBirthday(botId: string, b: Birthday): Promise<void> {
   memory.set(`${botId}:${b.userId}`, b);
+  clearBirthdayCache();
   if (pool && (await useDb())) {
     await pool.query(
       `INSERT INTO birthdays (bot_id, user_id, user_name, month, day, last_wished_year)
@@ -88,6 +93,7 @@ async function getBirthday(botId: string, userId: string): Promise<Birthday | nu
 
 async function deleteBirthday(botId: string, userId: string): Promise<boolean> {
   const had = memory.delete(`${botId}:${userId}`);
+  clearBirthdayCache();
   if (pool && (await useDb())) {
     const result = await pool.query("DELETE FROM birthdays WHERE bot_id = $1 AND user_id = $2", [botId, userId]);
     return (result.rowCount ?? 0) > 0 || had;
@@ -121,6 +127,53 @@ export async function allBirthdays(botId: string): Promise<Birthday[]> {
 
 // ---------- chat feature ----------
 
+/** Answers "when is <someone>'s birthday?" Returns false if we can't tell who they mean. */
+async function answerOtherBirthday(ctx: FeatureContext, who: string): Promise<boolean> {
+  const name = who.replace(/^@/, "").trim();
+  const nicknames = getSettings(ctx.botConfig.id).nicknames;
+  const known = await allKnownBirthdays(ctx.botConfig.id);
+
+  // An @mention is the surest; otherwise match names and nicknames.
+  const mentioned = [...ctx.message.mentions.users.values()].find((u) => u.id !== ctx.client.user.id);
+  const lower = name.toLowerCase();
+  const target =
+    (mentioned && known.find((b) => b.userId === mentioned.id)) ??
+    known.find((b) => b.userName.toLowerCase() === lower) ??
+    known.find((b) => (nicknames[b.userId] ?? []).some((n) => n.toLowerCase() === lower)) ??
+    known.find((b) => b.userName.toLowerCase().startsWith(lower) && lower.length >= 3);
+
+  if (!target) {
+    // We know who they mean (a member) but not their birthday.
+    const member =
+      mentioned ??
+      ctx.message.guild?.members.cache.find(
+        (m) => m.displayName.toLowerCase() === lower || m.user.username.toLowerCase() === lower
+      )?.user;
+    if (!member) return false; // not sure who that is — let her just chat
+    const displayName =
+      ctx.message.guild?.members.cache.get(member.id)?.displayName ?? member.displayName ?? name;
+    await replyInCharacter(
+      ctx,
+      `${ctx.user.name} asked when ${displayName}'s birthday is, but you don't know it yet. ` +
+        `Say so in character, and that ${displayName} can tell you with "my birthday is ...".`,
+      { fallback: `I don't know ${displayName}'s birthday yet! They can tell me with *my birthday is May 5* 🎂` }
+    );
+    return true;
+  }
+
+  const date = birthdayLabel(target);
+  const embed = new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setDescription(`🎂 ${target.userName}'s birthday: **${date}**`);
+  await replyInCharacter(
+    ctx,
+    `${ctx.user.name} asked when ${target.userName}'s birthday is. You know it: ${date}. ` +
+      `Tell them it's ${date} in character, in one short sentence.`,
+    { embed, fallback: `${target.userName}'s birthday is ${date} 🎂`, logExtra: `[birthday] ${target.userName}: ${date}` }
+  );
+  return true;
+}
+
 export const birthdayFeature: Feature = async (ctx) => {
   if (FORGET.test(ctx.text)) {
     const removed = await deleteBirthday(ctx.botConfig.id, ctx.user.id);
@@ -145,6 +198,11 @@ export const birthdayFeature: Feature = async (ctx) => {
       { embed, fallback: `Of course! It's ${date} 🎂`, logExtra: `[birthday] ${date}` }
     );
     return true;
+  }
+
+  const askOther = ctx.text.match(ASK_OTHER);
+  if (askOther && !/^(?:my|your|ur|her|his|their)$/i.test(askOther[1].trim())) {
+    return answerOtherBirthday(ctx, askOther[1]);
   }
 
   const set = ctx.text.match(SET);

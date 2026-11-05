@@ -148,3 +148,75 @@ export async function longTermNote(
     return null;
   }
 }
+
+// ---------- other people's birthdays ----------
+
+interface KnownBirthday {
+  userId: string;
+  userName: string;
+  month: number;
+  day: number;
+}
+
+let birthdayCache: { botId: string; at: number; list: KnownBirthday[] } | null = null;
+
+/** Everyone's saved birthday for this bot (cached for a minute). */
+export async function allKnownBirthdays(botId: string): Promise<KnownBirthday[]> {
+  if (birthdayCache && birthdayCache.botId === botId && Date.now() - birthdayCache.at < 60_000) {
+    return birthdayCache.list;
+  }
+  if (!pool || !(await db())) return [];
+  const { rows } = await pool.query<{ user_id: string; user_name: string; month: number; day: number }>(
+    "SELECT user_id, user_name, month, day FROM birthdays WHERE bot_id = $1",
+    [botId]
+  );
+  const list = rows.map((r) => ({ userId: r.user_id, userName: r.user_name, month: r.month, day: r.day }));
+  birthdayCache = { botId, at: Date.now(), list };
+  return list;
+}
+
+export function birthdayLabel(b: { month: number; day: number }): string {
+  return `${MONTHS[b.month - 1]} ${b.day}`;
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function mentionsName(text: string, name: string): boolean {
+  if (!name.trim()) return false;
+  // Also matches "douche's", "douches" and "douches'".
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegex(name.trim())}(?:'s|’s|s'|s|')?(?![\\p{L}\\p{N}_])`,
+    "iu"
+  ).test(text);
+}
+
+/**
+ * Birthdays of other people who are named or @mentioned in the last few
+ * messages, so she can answer "when is Douche's birthday?".
+ */
+export async function othersBirthdayNote(
+  botId: string,
+  recentText: string,
+  speakerId: string | undefined,
+  nicknames: Record<string, string[]>
+): Promise<string | null> {
+  try {
+    const list = await allKnownBirthdays(botId);
+    const found = list.filter(
+      (b) =>
+        b.userId !== speakerId &&
+        [b.userName, ...(nicknames[b.userId] ?? [])].some((name) => mentionsName(recentText, name))
+    );
+    if (found.length === 0) return null;
+    return `Birthdays you know: ${found.map((b) => `${b.userName}'s birthday is ${birthdayLabel(b)}`).join("; ")}.`;
+  } catch {
+    return null;
+  }
+}
+
+/** Call after a birthday is saved or deleted. */
+export function clearBirthdayCache(): void {
+  birthdayCache = null;
+}
