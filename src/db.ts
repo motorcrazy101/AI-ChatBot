@@ -135,6 +135,27 @@ const SCHEMA = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS watchlist_unique ON watchlist (bot_id, scope, lower(title));
 
+  CREATE TABLE IF NOT EXISTS game_state (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_id     TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    data       JSONB NOT NULL,
+    deadline   TIMESTAMPTZ,
+    active     BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS game_state_active ON game_state (bot_id, channel_id) WHERE active;
+
+  CREATE TABLE IF NOT EXISTS asylum_characters (
+    bot_id     TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    class      TEXT NOT NULL,
+    trait      TEXT,
+    PRIMARY KEY (bot_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS birthdays (
     bot_id           TEXT NOT NULL,
     user_id          TEXT NOT NULL,

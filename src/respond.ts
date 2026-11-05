@@ -78,10 +78,12 @@ export async function generateReply(
   channel: ReplyChannel,
   extra?: ConversationMessage,
   forUser?: { id: string; name: string },
-  extraNotes: string[] = []
+  extraNotes: string[] = [],
+  /** Story games need longer text than her normal chat replies. */
+  lengthOverride?: ReplyLength
 ): Promise<string | null> {
   const conversation = await fetchConversation(channel, client.user.id, config.contextMessageLimit);
-  const length = getSettings(botConfig.id).replyLength;
+  const length = lengthOverride ?? getSettings(botConfig.id).replyLength;
 
   // Background she should "just know": owner-set facts about people in this
   // conversation, plus long-term memory of the person she's talking to.

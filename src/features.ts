@@ -11,6 +11,7 @@ import { pollFeature } from "./polls";
 import { recommendationFeature } from "./recommendations";
 import { reminderFeature } from "./reminders";
 import { rememberFeature } from "./rememberFeature";
+import { storyFeatures } from "./storyGames";
 import { watchlistFeature } from "./watchlist";
 import { weatherFeature } from "./weather";
 
@@ -50,6 +51,7 @@ const FEATURES: Feature[] = [
   reminderFeature,
   birthdayFeature,
   rememberFeature,
+  ...storyFeatures,
   levelFeature,
   weatherFeature,
   catchUpFeature,

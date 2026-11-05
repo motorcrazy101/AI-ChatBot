@@ -32,6 +32,7 @@ import {
 } from "./respond";
 import { startReminderLoop } from "./reminders";
 import { startScheduler } from "./scheduler";
+import { handleStoryMessage, startStoryLoop } from "./storyGames";
 import { currentPhase } from "./sleep";
 import { addDays, zonedParts } from "./time";
 import { getSettings, settingsLoaded } from "./settings";
@@ -129,6 +130,16 @@ async function handleMessage(
   if (await checkTriviaAnswer(message, user.name, botConfig.id)) return;
 
   const addressed = isAddressedToBot(message, client, botConfig);
+  const botName = botDisplayName(client, channel);
+  const text = stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]);
+
+  // Story games (adventure votes, Secret File questions, logbook lines, roleplay
+  // scenes) react to messages in their thread even without her name.
+  try {
+    if (await handleStoryMessage(message, client, botConfig, user, botName, text, addressed)) return;
+  } catch (error) {
+    console.error(`[${botConfig.id}] Story game message failed:`, error);
+  }
 
   // Not talking to her: maybe chime in or react in chime-in channels (not while she's asleep).
   let chimingIn = false;
@@ -150,7 +161,6 @@ async function handleMessage(
     }
   }
 
-  const botName = botDisplayName(client, channel);
   const fromPerson = !chimingIn && !message.author.bot;
 
   // "confess: ..." in a DM → anonymous confession (not saved in the chat log).
@@ -165,7 +175,6 @@ async function handleMessage(
   }
 
   if (!chimingIn) logIncoming(botConfig.id, botName, message);
-  const text = stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]);
 
   // Talking to her slowly raises your affection level and cheers her up.
   const affection = fromPerson ? await addAffection(botConfig.id, user, "chat") : null;
@@ -322,6 +331,7 @@ function buildClient(botConfig: BotConfig, withMembers: boolean, withPresences: 
     startAnniversaryLoop(client, botConfig);
     startPollLoop(client, botConfig);
     startAnimeAlertLoop(client, botConfig);
+    startStoryLoop(client, botConfig);
 
     // Apply the status once saved settings are loaded, then keep it in sync
     // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).
