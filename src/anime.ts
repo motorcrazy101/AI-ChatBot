@@ -1,5 +1,6 @@
 import axios from "axios";
 import { EmbedBuilder } from "discord.js";
+import { anilist, describeError, plainText } from "./anilist";
 import { EMBED_COLOR, Feature, replyInCharacter, replyPlain, truncate } from "./featureKit";
 
 /**
@@ -69,6 +70,8 @@ export interface JikanEntry {
   genres?: { name: string }[];
   studios?: { name: string }[];
   images?: { jpg?: { image_url?: string; large_image_url?: string } };
+  /** Where the info came from (MyAnimeList normally, AniList as the backup). */
+  source?: "MyAnimeList" | "AniList";
 }
 
 function normalize(text: string): string {
@@ -95,12 +98,7 @@ function strongMatch(query: string, entry: JikanEntry): boolean {
   });
 }
 
-export async function search(request: AnimeRequest): Promise<JikanEntry | null> {
-  const { data } = await axios.get(`https://api.jikan.moe/v4/${request.kind}`, {
-    params: { q: request.query, limit: 10, sfw: true, order_by: "members", sort: "desc" },
-    timeout: 12_000,
-  });
-  const results: JikanEntry[] = Array.isArray(data?.data) ? data.data : [];
+function pickResult(request: AnimeRequest, results: JikanEntry[]): JikanEntry | null {
   const strong = results.find((r) => strongMatch(request.query, r));
   if (strong) {
     // Without an "anime" hint, only accept fairly well-known shows.
@@ -108,6 +106,97 @@ export async function search(request: AnimeRequest): Promise<JikanEntry | null> 
     return strong;
   }
   return request.explicit ? results[0] ?? null : null;
+}
+
+async function searchJikan(request: AnimeRequest): Promise<JikanEntry | null> {
+  const { data } = await axios.get(`https://api.jikan.moe/v4/${request.kind}`, {
+    params: { q: request.query, limit: 10, sfw: true, order_by: "members", sort: "desc" },
+    timeout: 12_000,
+  });
+  const results: JikanEntry[] = Array.isArray(data?.data) ? data.data : [];
+  return pickResult(request, results.map((r) => ({ ...r, source: "MyAnimeList" as const })));
+}
+
+const ANILIST_STATUS: Record<string, string> = {
+  FINISHED: "Finished",
+  RELEASING: "Currently Airing",
+  NOT_YET_RELEASED: "Not yet released",
+  CANCELLED: "Cancelled",
+  HIATUS: "On hiatus",
+};
+
+interface AniListMedia {
+  idMal: number | null;
+  siteUrl: string;
+  format: string | null;
+  episodes: number | null;
+  chapters: number | null;
+  volumes: number | null;
+  status: string | null;
+  averageScore: number | null;
+  popularity: number | null;
+  description: string | null;
+  seasonYear: number | null;
+  startDate: { year: number | null } | null;
+  genres: string[] | null;
+  isAdult: boolean;
+  synonyms: string[] | null;
+  title: { romaji: string | null; english: string | null };
+  studios: { nodes: { name: string }[] } | null;
+  coverImage: { large: string | null } | null;
+}
+
+/** Backup search on AniList, converted to the same shape as MyAnimeList results. */
+async function searchAniList(request: AnimeRequest): Promise<JikanEntry | null> {
+  const data = await anilist<{ Page: { media: AniListMedia[] } }>(
+    `query ($search: String, $type: MediaType) {
+      Page(perPage: 10) {
+        media(search: $search, type: $type, isAdult: false, sort: [SEARCH_MATCH, POPULARITY_DESC]) {
+          idMal siteUrl format episodes chapters volumes status averageScore popularity
+          description(asHtml: false) seasonYear startDate { year } genres isAdult synonyms
+          title { romaji english } studios(isMain: true) { nodes { name } } coverImage { large }
+        }
+      }
+    }`,
+    { search: request.query, type: request.kind === "manga" ? "MANGA" : "ANIME" }
+  );
+  const results: JikanEntry[] = (data.Page?.media ?? []).map((m) => {
+    const year = m.seasonYear ?? m.startDate?.year ?? null;
+    return {
+      mal_id: m.idMal ?? 0,
+      url: m.siteUrl,
+      title: m.title.romaji ?? m.title.english ?? request.query,
+      title_english: m.title.english,
+      title_synonyms: m.synonyms ?? [],
+      type: m.format,
+      episodes: m.episodes,
+      chapters: m.chapters,
+      volumes: m.volumes,
+      status: m.status ? ANILIST_STATUS[m.status] ?? m.status : null,
+      score: m.averageScore ? m.averageScore / 10 : null,
+      rank: null,
+      members: m.popularity,
+      synopsis: plainText(m.description),
+      year,
+      aired: { string: year ? String(year) : undefined },
+      published: { string: year ? String(year) : undefined },
+      genres: (m.genres ?? []).map((name) => ({ name })),
+      studios: m.studios?.nodes ?? [],
+      images: { jpg: { large_image_url: m.coverImage?.large ?? undefined } },
+      source: "AniList" as const,
+    };
+  });
+  return pickResult(request, results);
+}
+
+/** MyAnimeList (via Jikan) first; if that's down or busy, AniList. */
+export async function search(request: AnimeRequest): Promise<JikanEntry | null> {
+  try {
+    return await searchJikan(request);
+  } catch (err) {
+    console.warn(`[anime] MyAnimeList (Jikan) failed (${describeError(err)}), trying AniList…`);
+    return await searchAniList(request);
+  }
 }
 
 export const animeFeature: Feature = async (ctx) => {
@@ -119,13 +208,13 @@ export const animeFeature: Feature = async (ctx) => {
     entry = await search(request);
   } catch (err) {
     const status = axios.isAxiosError(err) ? err.response?.status : undefined;
-    console.warn("[anime] Jikan failed:", (err as Error).message);
+    console.warn(`[anime] MyAnimeList and AniList both failed (${describeError(err)})`);
     if (!request.explicit) return false; // probably not about an anime anyway; just chat
     await replyPlain(
       ctx,
       status === 429
-        ? "MyAnimeList is busy right now — ask me again in a few seconds!"
-        : "I can't reach MyAnimeList right now 😣 Try again in a bit."
+        ? "The anime databases are busy right now — ask me again in a few seconds!"
+        : "I can't reach the anime databases right now 😣 Try again in a bit."
     );
     return true;
   }
@@ -162,7 +251,7 @@ export const animeFeature: Feature = async (ctx) => {
       { name: isManga ? "Published" : "Aired", value: truncate(when, 100), inline: true },
       { name: "Genres", value: truncate(genres, 200), inline: true }
     )
-    .setFooter({ text: `MyAnimeList · ${entry.type ?? request.kind}` });
+    .setFooter({ text: `${entry.source ?? "MyAnimeList"} · ${entry.type ?? request.kind}` });
   if (entry.title_english && entry.title_english !== entry.title) {
     embed.setAuthor({ name: truncate(entry.title, 200) });
   }
@@ -171,7 +260,7 @@ export const animeFeature: Feature = async (ctx) => {
 
   const studios = (entry.studios ?? []).map((s) => s.name).join(", ");
   const facts =
-    `"${name}" (${entry.type ?? request.kind}), MyAnimeList score ${entry.score ?? "n/a"}` +
+    `"${name}" (${entry.type ?? request.kind}), ${entry.source ?? "MyAnimeList"} score ${entry.score ?? "n/a"}` +
     `${entry.rank ? `, ranked #${entry.rank}` : ""}, ${length}, ${entry.status ?? "status unknown"}, ` +
     `aired/published ${when}, genres: ${genres}${studios ? `, studio: ${studios}` : ""}. ` +
     `Synopsis: ${truncate(synopsis, 600)}`;

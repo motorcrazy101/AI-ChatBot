@@ -1,5 +1,6 @@
 import axios from "axios";
 import { EmbedBuilder } from "discord.js";
+import { anilist, describeError } from "./anilist";
 import { search } from "./anime";
 import { EMBED_COLOR, Feature, pick, replyInCharacter, replyPlain, truncate } from "./featureKit";
 
@@ -59,6 +60,75 @@ export function parseRecRequest(text: string): { kind: "like"; title: string } |
   return null;
 }
 
+// ---------- AniList backup ----------
+
+/** Our genre words -> AniList genre (or tag, for isekai). */
+const ANILIST_GENRES: Record<string, { genre?: string; tag?: string }> = {
+  action: { genre: "Action" }, adventure: { genre: "Adventure" }, comedy: { genre: "Comedy" },
+  mystery: { genre: "Mystery" }, drama: { genre: "Drama" }, fantasy: { genre: "Fantasy" },
+  horror: { genre: "Horror" }, romance: { genre: "Romance" }, "sci-fi": { genre: "Sci-Fi" },
+  scifi: { genre: "Sci-Fi" }, "sci fi": { genre: "Sci-Fi" }, sports: { genre: "Sports" }, sport: { genre: "Sports" },
+  supernatural: { genre: "Supernatural" }, "slice of life": { genre: "Slice of Life" }, suspense: { genre: "Thriller" },
+  isekai: { tag: "Isekai" }, mecha: { genre: "Mecha" }, music: { genre: "Music" },
+  psychological: { genre: "Psychological" }, school: { tag: "School" }, romcom: { genre: "Comedy" },
+  "rom com": { genre: "Comedy" }, "romantic comedy": { genre: "Comedy" }, thriller: { genre: "Thriller" },
+  cozy: { genre: "Slice of Life" }, wholesome: { genre: "Slice of Life" },
+};
+
+interface AniItem {
+  title: { romaji: string | null; english: string | null };
+  siteUrl: string;
+  averageScore?: number | null;
+  coverImage?: { large?: string | null } | null;
+}
+const ITEM_FIELDS = "title { romaji english } siteUrl averageScore coverImage { large }";
+const toRec = (m: AniItem, note?: string): Rec => ({
+  title: m.title.english || m.title.romaji || "?",
+  url: m.siteUrl,
+  image: m.coverImage?.large ?? undefined,
+  note: note ?? (m.averageScore ? `⭐ ${(m.averageScore / 10).toFixed(1)}` : undefined),
+});
+
+async function aniListRecs(request: NonNullable<ReturnType<typeof parseRecRequest>>): Promise<{ recs: Rec[]; heading: string } | null> {
+  if (request.kind === "like") {
+    const data = await anilist<{
+      Media: (AniItem & { recommendations: { nodes: { rating: number; mediaRecommendation: AniItem | null }[] } }) | null;
+    }>(
+      `query ($search: String) { Media(search: $search, type: ANIME, isAdult: false) { ${ITEM_FIELDS}
+        recommendations(sort: RATING_DESC, perPage: 8) { nodes { rating mediaRecommendation { ${ITEM_FIELDS} } } } } }`,
+      { search: request.title }
+    ).catch((err) => {
+      if (/not found/i.test((err as Error).message)) return { Media: null };
+      throw err;
+    });
+    if (!data.Media) return null;
+    const nodes = data.Media.recommendations.nodes.filter((n) => n.mediaRecommendation);
+    const recs = sample(nodes, 3)
+      .sort((a, b) => b.rating - a.rating)
+      .map((n) => toRec(n.mediaRecommendation as AniItem, `${n.rating} fans recommend it`));
+    return { recs, heading: `If you liked ${data.Media.title.english || data.Media.title.romaji}…` };
+  }
+
+  if (request.kind === "genre") {
+    const pickOne = ANILIST_GENRES[request.genre] ?? {};
+    const data = await anilist<{ Page: { media: AniItem[] } }>(
+      `query ($genre: String, $tag: String) { Page(perPage: 25) { media(type: ANIME, isAdult: false, genre: $genre,
+        tag: $tag, sort: SCORE_DESC, averageScore_greater: 74) { ${ITEM_FIELDS} } } }`,
+      { genre: pickOne.genre, tag: pickOne.tag }
+    );
+    return { recs: sample(data.Page.media, 3).map((m) => toRec(m)), heading: `Top ${request.genre} picks` };
+  }
+
+  const data = await anilist<{ Page: { media: AniItem[] } }>(
+    `query { Page(perPage: 25) { media(type: ANIME, isAdult: false, status: RELEASING, sort: TRENDING_DESC) { ${ITEM_FIELDS} } } }`,
+    {}
+  );
+  return {
+    recs: sample(data.Page.media, 3).map((m) => toRec(m, m.averageScore ? `⭐ ${(m.averageScore / 10).toFixed(1)} · airing now` : "airing now")),
+    heading: "Popular right now",
+  };
+}
+
 export const recommendationFeature: Feature = async (ctx) => {
   const request = parseRecRequest(ctx.text);
   if (!request) return false;
@@ -115,9 +185,20 @@ export const recommendationFeature: Feature = async (ctx) => {
       heading = "Popular right now";
     }
   } catch (err) {
-    console.warn("[recommendations] Jikan failed:", (err as Error).message);
-    await replyPlain(ctx, "I can't reach MyAnimeList right now 😣 Try again in a bit.");
-    return true;
+    console.warn(`[recommendations] MyAnimeList (Jikan) failed (${describeError(err)}), trying AniList…`);
+    try {
+      const backup = await aniListRecs(request);
+      if (!backup) {
+        await replyPlain(ctx, `I couldn't find an anime called "${request.kind === "like" ? request.title : ""}" 🤔`);
+        return true;
+      }
+      recs = backup.recs;
+      heading = backup.heading;
+    } catch (err2) {
+      console.warn(`[recommendations] AniList failed too (${describeError(err2)})`);
+      await replyPlain(ctx, "I can't reach the anime databases right now 😣 Try again in a bit.");
+      return true;
+    }
   }
 
   if (recs.length === 0) {
@@ -129,7 +210,7 @@ export const recommendationFeature: Feature = async (ctx) => {
     .setColor(EMBED_COLOR)
     .setTitle(`📺 ${truncate(heading, 240)}`)
     .setDescription(recs.map((r, i) => `**${i + 1}. [${truncate(r.title, 100)}](${r.url})**${r.note ? ` — ${r.note}` : ""}`).join("\n"))
-    .setFooter({ text: "From MyAnimeList · ask again for different picks" });
+    .setFooter({ text: `From ${recs[0]?.url.includes("anilist") ? "AniList" : "MyAnimeList"} · ask again for different picks` });
   const thumb = pick(recs).image;
   if (thumb) embed.setThumbnail(thumb);
 
