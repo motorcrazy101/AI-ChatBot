@@ -28,11 +28,14 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Notices what you're doing**: "ooh, Genshin again?" (needs Presence Intent)
 - **Daily streaks**: say good morning / good night every day for a streak with milestones
 - **Gifts**: "aurora here's a cookie 🍪" — she has favorites and dislikes
-- **Anonymous confessions**: DM her "confess: ..." and it's posted anonymously after owner approval
+- **Anonymous confessions**: DM her "I want to confess" and it's posted anonymously after owner approval
 - **Polls**: "aurora poll: pizza or tacos?" with reaction voting and a winner announcement
 - **Episode alerts**: "aurora tell me when Frieren airs" pings you when new episodes come out (AniList)
 - **Recommendations**: "aurora recommend me something like Frieren" (MyAnimeList)
 - **Server watchlist**: add shows, see the list, and let her pick tonight's watch
+- **Asylum story games** (all set in the Anime Asylum, with the bot owner as the Warden):
+  text adventures with voting, dice, characters, Energy and inventory (6 story packs, group in threads or solo in DMs),
+  Asylum Mysteries, the Warden's Secret File (20 Questions), the Asylum Logbook (story chain) and roleplay scenes
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -100,7 +103,14 @@ Server Settings → Integrations → the bot.
 | `aurora tell me when Frieren airs` · `aurora my anime alerts` · `aurora stop alerts for Frieren` | Episode alerts |
 | `aurora recommend me something like Frieren` · `aurora recommend a romance anime` | Recommendations |
 | `aurora add Frieren to the watchlist` · `aurora show the watchlist` · `aurora what should we watch tonight?` | Server watchlist |
-| DM her `confess: …` | Anonymous confession |
+| `aurora start an adventure` (or `…: haunted east wing`, `start a solo adventure`) · `aurora adventure packs` | Asylum text adventure — vote with 🇦🇧🇨 or type A/B/C |
+| `aurora pause / continue / end the adventure` · `aurora adventure status` | Control the adventure |
+| `aurora create my character: Rin the Escape Artist` · `aurora my character` · `aurora character classes` | Your Asylum resident (+3 on matching rolls) |
+| `aurora start a mystery` · `aurora ask Mimi where she was` · `aurora search the laundry room` · `aurora case file` · `aurora start the vote` | Asylum Mystery |
+| `aurora open the secret file` · then `is it a girl?` · `is it Levi?` · `aurora give up` | The Warden's Secret File (20 Questions) |
+| `aurora open the logbook` · then everyone adds lines · `aurora close the logbook` | Asylum Logbook (story chain) |
+| `aurora let's roleplay in the cafeteria` · `aurora end the scene` | Roleplay scene (she answers everyone in the thread) |
+| DM her `I want to confess`, then send the confession (or `confess: …` in one message) | Anonymous confession |
 
 ## Discord Developer Portal
 
