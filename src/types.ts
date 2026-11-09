@@ -107,4 +107,14 @@ export interface BotSettings {
   confessionChannels: Record<string, string>;
   /** Whether confessions wait for the owner's approval before posting. */
   confessionApproval: boolean;
+  /** Anime reaction GIFs. */
+  gifs: {
+    enabled: boolean;
+    /** % chance of a random reaction GIF on her chat replies. */
+    chance: number;
+    /** kiss, peck, lick, bite — off unless the owner turns them on. */
+    intimate: boolean;
+    /** Users (besides the owner) allowed to command slap/punch/kick/yeet/shoot. */
+    meanAccess: string[];
+  };
 }

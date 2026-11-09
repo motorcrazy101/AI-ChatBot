@@ -18,6 +18,7 @@ import { runFeatures } from "./features";
 import { loadOwners } from "./memory";
 import { liftMood } from "./mood";
 import { startPollLoop } from "./polls";
+import { planIncomingGif, planReplyGif, replyWithGif } from "./reactionGifs";
 import { checkTriviaAnswer } from "./games";
 import { handleImageRequest, parseImageRequest } from "./imageSearch";
 import { refreshPresence } from "./presence";
@@ -236,11 +237,34 @@ async function handleMessage(
     }
   }
 
+  // Reaction GIFs: hugging back "*hugs aurora*", or self-defense if someone is mean to her.
+  const incomingGif = fromPerson
+    ? planIncomingGif(
+        botConfig.id,
+        message.content,
+        [client.user.username, client.user.globalName ?? "", botName],
+        user,
+        affection?.after.level ?? 0
+      )
+    : null;
+  if (incomingGif?.note) extraNotes.push(incomingGif.note);
+
   const stopTyping = startTyping(channel, botConfig.id);
   try {
     const reply = await generateReply(client, botConfig, channel, undefined, fromPerson ? user : undefined, extraNotes);
     stopTyping();
     if (!reply) return;
+
+    // Attach a GIF (theirs to answer, or now and then one that matches her reply).
+    const gifPlan = !chimingIn && fromPerson ? incomingGif ?? planReplyGif(botConfig.id, reply, user.name) : null;
+    let sentWithGif = false;
+    if (gifPlan && reply.length <= 2000) {
+      const withGif = await replyWithGif(message, reply, gifPlan, botName).catch(() => null);
+      if (withGif) {
+        logOutgoing(botConfig.id, botName, withGif, message, `${reply}\n[gif] ${gifPlan.action.key}`);
+        sentWithGif = true;
+      }
+    }
 
     if (chimingIn) {
       const sent = await sendText(channel, reply);
@@ -248,8 +272,10 @@ async function handleMessage(
       return;
     }
 
-    const sent = await sendText(channel, reply, { replyTo: message });
-    for (const post of sent) logOutgoing(botConfig.id, botName, post, message);
+    if (!sentWithGif) {
+      const sent = await sendText(channel, reply, { replyTo: message });
+      for (const post of sent) logOutgoing(botConfig.id, botName, post, message);
+    }
 
     await announceLevelUp(channel, botConfig, botName, user, affection);
     if (streakMilestone) {

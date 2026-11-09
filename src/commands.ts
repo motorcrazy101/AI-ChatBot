@@ -284,6 +284,46 @@ function buildCommand(name: string, botName: string) {
     )
     .addSubcommandGroup((g) =>
       g
+        .setName("gifs")
+        .setDescription("Anime reaction GIFs")
+        .addSubcommand((s) => s.setName("on").setDescription("Turn reaction GIFs on"))
+        .addSubcommand((s) => s.setName("off").setDescription("Turn all reaction GIFs off"))
+        .addSubcommand((s) =>
+          s
+            .setName("chance")
+            .setDescription("How often she adds a random GIF to her replies")
+            .addNumberOption((o) =>
+              o.setName("percent").setDescription("0-100 (default 10)").setMinValue(0).setMaxValue(100).setRequired(true)
+            )
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("intimate")
+            .setDescription("Allow kiss / peck / lick / bite GIFs (bot owner only)")
+            .addStringOption((o) =>
+              o
+                .setName("state")
+                .setDescription("on or off (default off)")
+                .setRequired(true)
+                .addChoices({ name: "On", value: "on" }, { name: "Off", value: "off" })
+            )
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("grant")
+            .setDescription("Let someone use slap/punch/kick/yeet/shoot (bot owner only)")
+            .addUserOption((o) => o.setName("user").setDescription("Who").setRequired(true))
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("revoke")
+            .setDescription("Take away slap/punch/kick/yeet/shoot (bot owner only)")
+            .addUserOption((o) => o.setName("user").setDescription("Who").setRequired(true))
+        )
+        .addSubcommand((s) => s.setName("access").setDescription("Who can use the mean GIFs"))
+    )
+    .addSubcommandGroup((g) =>
+      g
         .setName("confessions")
         .setDescription("Anonymous confessions members DM her")
         .addSubcommand((s) =>
@@ -597,6 +637,51 @@ async function runAction(
       }
       return memoryAction(action, interaction, botId, botName);
 
+    // ---- reaction GIFs ----
+    case "gifs on":
+    case "gifs off": {
+      const on = action === "gifs on";
+      await updateSettings(botId, (s) => {
+        s.gifs.enabled = on;
+      });
+      return on ? `🎞️ Reaction GIFs are on!${persistNote}` : `Reaction GIFs are off.${persistNote}`;
+    }
+    case "gifs chance": {
+      const percent = interaction.options.getNumber("percent", true);
+      await updateSettings(botId, (s) => {
+        s.gifs.chance = percent;
+      });
+      return `🎲 She'll add a random reaction GIF to about ${percent}% of her replies.${persistNote}`;
+    }
+    case "gifs intimate": {
+      if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can change this.";
+      const on = interaction.options.getString("state", true) === "on";
+      await updateSettings(botId, (s) => {
+        s.gifs.intimate = on;
+      });
+      return on
+        ? `💋 Kiss / peck / lick / bite GIFs are now **on**.${persistNote}`
+        : `🙈 Kiss / peck / lick / bite GIFs are **off**.${persistNote}`;
+    }
+    case "gifs grant":
+    case "gifs revoke": {
+      if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can give or take away this access.";
+      const user = interaction.options.getUser("user", true);
+      const grant = action === "gifs grant";
+      await updateSettings(botId, (s) => toggleInList(s.gifs.meanAccess, user.id, grant));
+      return grant
+        ? `👊 ${userMention(user.id)} can now use slap / punch / kick / yeet / shoot.${persistNote}`
+        : `🚫 ${userMention(user.id)} can no longer use slap / punch / kick / yeet / shoot.${persistNote}`;
+    }
+    case "gifs access": {
+      const list = getSettings(botId).gifs.meanAccess;
+      return (
+        `👊 **Who can command slap / punch / kick / yeet / shoot:**\n• The bot owner (the Warden)` +
+        (list.length ? `\n${list.map((id) => `• ${userMention(id)}`).join("\n")}` : "\n(no one else)") +
+        `\n-# ${botName} only uses them herself when someone is mean to her.`
+      );
+    }
+
     // ---- confessions ----
     case "confessions on": {
       const channelId = interaction.options.getChannel("channel")?.id ?? here;
@@ -763,6 +848,7 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Scheduled posts: ${scheduleCount}`,
     `• Mood today: ${currentMood(botConfig.id).mood.emoji} ${currentMood(botConfig.id).mood.key}`,
     `• Confessions: ${s.confessionChannels[guildId] ? `${channelMention(s.confessionChannels[guildId])} (${s.confessionApproval ? "owner approves" : "no approval"})` : "off"}`,
+    `• Reaction GIFs: ${s.gifs.enabled ? `on · ${s.gifs.chance}% random · intimate ${s.gifs.intimate ? "on" : "off"} · mean access: owner${s.gifs.meanAccess.length ? ` + ${s.gifs.meanAccess.length}` : ""}` : "off"}`,
     `• Answers replies to her messages: ${s.repliesOffGuilds.includes(guildId) ? "off" : "on"}`,
     `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,

@@ -8,6 +8,7 @@ import { EMBED_COLOR, Feature, FeatureContext, replyInCharacter } from "./featur
 import { gameFeatures } from "./games";
 import { giftFeature } from "./gifts";
 import { pollFeature } from "./polls";
+import { gifFeature } from "./reactionGifs";
 import { recommendationFeature } from "./recommendations";
 import { reminderFeature } from "./reminders";
 import { rememberFeature } from "./rememberFeature";
@@ -58,6 +59,7 @@ const FEATURES: Feature[] = [
   pollFeature,
   giftFeature,
   ...gameFeatures,
+  gifFeature,
   watchlistFeature,
   recommendationFeature,
   animeFeature,

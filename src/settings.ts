@@ -38,6 +38,7 @@ function defaults(): BotSettings {
     anniversaryPosted: {},
     confessionChannels: {},
     confessionApproval: true,
+    gifs: { enabled: true, chance: 10, intimate: false, meanAccess: [] },
   };
 }
 
