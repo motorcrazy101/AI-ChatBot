@@ -36,6 +36,8 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
 - **Asylum story games** (all set in the Anime Asylum, with the bot owner as the Warden):
   text adventures with voting, dice, characters, Energy and inventory (6 story packs, group in threads or solo in DMs),
   Asylum Mysteries, the Warden's Secret File (20 Questions), the Asylum Logbook (story chain) and roleplay scenes
+- **Anime reaction GIFs**: "aurora hug @Lilly", "aurora dance", "*hugs aurora*" → she hugs back, plus random reaction GIFs;
+  kiss/peck/lick/bite off by default; slap/punch/kick/yeet/shoot only for the owner + people they grant (Aurora uses them only in self-defense)
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -79,6 +81,8 @@ Server Settings → Integrations → the bot.
 | `/aurora replies on` / `off` | Whether replying to her messages makes her answer (per server) |
 | `/aurora confessions on` / `off` / `approval` | Anonymous confessions channel and approval |
 | `/aurora mood show` / `set` / `reset` | Her mood today |
+| `/aurora gifs on` / `off` / `chance` | Reaction GIFs and how often she adds random ones |
+| `/aurora gifs intimate` · `grant` · `revoke` · `access` | Owner only: intimate GIFs and who can use the mean ones |
 | `/aurora length` | How long her replies are (short / medium / long / no limit) |
 | `/aurora sleep on` / `off` / `set` | Her sleep schedule |
 | `/aurora birthdays on` / `off` / `list` | Where birthday wishes go (DMs if none) |
@@ -110,6 +114,8 @@ Server Settings → Integrations → the bot.
 | `aurora open the secret file` · then `is it a girl?` · `is it Levi?` · `aurora give up` | The Warden's Secret File (20 Questions) |
 | `aurora open the logbook` · then everyone adds lines · `aurora close the logbook` | Asylum Logbook (story chain) |
 | `aurora let's roleplay in the cafeteria` · `aurora end the scene` | Roleplay scene (she answers everyone in the thread) |
+| `aurora hug @Lilly` · `aurora pat me` · `aurora hug Lilly for me` · `aurora give Lilly a high five` · `aurora dance` | Anime reaction GIFs |
+| `*hugs aurora*` · `*pats aurora*` · `*gives aurora a hug*` | She reacts back with a GIF |
 | DM her `I want to confess`, then send the confession (or `confess: …` in one message) | Anonymous confession |
 
 ## Discord Developer Portal
