@@ -38,6 +38,10 @@ Runs one or more Discord bots, each tied to a Kindroid AI persona. Hosted on Rai
   Asylum Mysteries, the Warden's Secret File (20 Questions), the Asylum Logbook (story chain) and roleplay scenes
 - **Anime reaction GIFs**: "aurora hug @Lilly", "aurora dance", "*hugs aurora*" → she hugs back, plus random reaction GIFs;
   kiss/peck/lick/bite off by default; slap/punch/kick/yeet/shoot only for the owner + people they grant (Aurora uses them only in self-defense)
+- **Asylum life**: every resident gets a room + ward, a profile card and achievement badges;
+  a morning **Asylum Gazette** (mood, birthdays, anime airing today, question of the day, the Warden's notice, Nurse Mochi's prescription);
+  her nightly **diary** about what happened in chat; **lights-out** at her bedtime with the Warden's night patrol and a "Most Caught After Curfew" board
+- **Airing today**, **watch parties** with 🍿 opt-in pings, a **Ship-o-meter** (off by default) and Nurse Mochi's joke prescriptions
 - **Admin slash command** (`/aurora`, named after the bot) to control all of the above
 - **Chat logs** saved to Postgres, plus a password-protected web page to browse them
 
@@ -83,6 +87,10 @@ Server Settings → Integrations → the bot.
 | `/aurora mood show` / `set` / `reset` | Her mood today |
 | `/aurora gifs on` / `off` / `chance` | Reaction GIFs and how often she adds random ones |
 | `/aurora gifs intimate` · `grant` · `revoke` · `access` | Owner only: intimate GIFs and who can use the mean ones |
+| `/aurora asylum gazette-on` / `off` / `test` | Morning Gazette in a channel (optional time, default 8:00 AM) |
+| `/aurora asylum diary-on` / `off` / `test` | Her nightly diary (optional time, default 10:30 PM) |
+| `/aurora asylum curfew-on` / `off` / `test` | Lights-out at her bedtime + the night patrol until she wakes |
+| `/aurora asylum ship-on` / `ship-off` | Ship-o-meter (off by default) |
 | `/aurora length` | How long her replies are (short / medium / long / no limit) |
 | `/aurora sleep on` / `off` / `set` | Her sleep schedule |
 | `/aurora birthdays on` / `off` / `list` | Where birthday wishes go (DMs if none) |
@@ -116,6 +124,12 @@ Server Settings → Integrations → the bot.
 | `aurora let's roleplay in the cafeteria` · `aurora end the scene` | Roleplay scene (she answers everyone in the thread) |
 | `aurora hug @Lilly` · `aurora pat me` · `aurora hug Lilly for me` · `aurora give Lilly a high five` · `aurora dance` | Anime reaction GIFs |
 | `*hugs aurora*` · `*pats aurora*` · `*gives aurora a hug*` | She reacts back with a GIF |
+| `aurora my profile` · `aurora profile @Lilly` · `aurora what's my room` | Resident file: room, level, streak, record, badges |
+| `aurora my badges` · `aurora achievements` · `aurora curfew leaderboard` | Badges and the night patrol hall of shame |
+| `aurora what's airing today?` (or `tomorrow`) | Anime episodes airing (AniList) |
+| `aurora watch party friday 8pm Frieren` · `aurora upcoming watch parties` · `aurora cancel watch party 2` | Watch parties — react 🍿 to get pinged |
+| `aurora ship Lilly and Rin` | Ship-o-meter (if turned on) |
+| `aurora my prescription` | Nurse Mochi's (joke) prescription of the day |
 | DM her `I want to confess`, then send the confession (or `confess: …` in one message) | Anonymous confession |
 
 ## Discord Developer Portal
