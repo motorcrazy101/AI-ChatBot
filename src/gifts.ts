@@ -2,6 +2,7 @@ import { EmbedBuilder } from "discord.js";
 import { addAffection, AffectionChange } from "./affection";
 import { EMBED_COLOR, Feature, replyInCharacter } from "./featureKit";
 import { liftMood } from "./mood";
+import { awardMilestones, incrementStat } from "./residentsData";
 import { zonedParts } from "./time";
 
 /**
@@ -107,5 +108,7 @@ export const giftFeature: Feature = async (ctx) => {
       })
       .catch(() => undefined);
   }
+  const given = await incrementStat(ctx.botConfig.id, ctx.user.id, "gifts");
+  await awardMilestones(ctx.botConfig.id, ctx.user, given, [[10, "gifts10"]], ctx.channel);
   return true;
 };

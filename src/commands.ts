@@ -25,6 +25,7 @@ import { currentPhase } from "./sleep";
 import { MONTHS, zonedParts } from "./time";
 import { BotConfig, ReplyLength, ScheduleDays, StatusType } from "./types";
 import { welcomeMember } from "./welcome";
+import { postDiary, postGazette, postLightsOut } from "./asylumLife";
 
 /**
  * One admin-only slash command per bot, named after the bot (Aurora -> /aurora).
@@ -282,6 +283,31 @@ function buildCommand(name: string, botName: string) {
             .addIntegerOption((o) => o.setName("id").setDescription("Number from the list").setRequired(true))
         )
     )
+    .addSubcommandGroup((g) => {
+      g.setName("asylum").setDescription("Daily Asylum life: Gazette, diary, lights-out patrol, Ship-o-meter");
+      const withChannel = (name: string, desc: string, time: boolean) =>
+        g.addSubcommand((s) => {
+          s.setName(name)
+            .setDescription(desc)
+            .addChannelOption((o) =>
+              o.setName("channel").setDescription("Where to post (default: this channel)").addChannelTypes(...POSTABLE_CHANNELS)
+            );
+          if (time) s.addStringOption((o) => o.setName("time").setDescription("When, e.g. 8:00am or 22:30"));
+          return s;
+        });
+      withChannel("gazette-on", "Post the Asylum Gazette every morning", true);
+      g.addSubcommand((s) => s.setName("gazette-off").setDescription("Stop the Gazette"));
+      g.addSubcommand((s) => s.setName("gazette-test").setDescription("Post today's Gazette here now"));
+      withChannel("diary-on", "Post her diary entry every night", true);
+      g.addSubcommand((s) => s.setName("diary-off").setDescription("Stop the diary"));
+      g.addSubcommand((s) => s.setName("diary-test").setDescription("Post tonight's diary here now"));
+      withChannel("curfew-on", "Lights-out announcement at her bedtime + the night patrol", false);
+      g.addSubcommand((s) => s.setName("curfew-off").setDescription("Stop lights-out and the night patrol"));
+      g.addSubcommand((s) => s.setName("curfew-test").setDescription("Post the lights-out announcement here now"));
+      g.addSubcommand((s) => s.setName("ship-on").setDescription("Turn the Ship-o-meter on"));
+      g.addSubcommand((s) => s.setName("ship-off").setDescription("Turn the Ship-o-meter off"));
+      return g;
+    })
     .addSubcommandGroup((g) =>
       g
         .setName("gifs")
@@ -459,6 +485,7 @@ async function runAction(
   botConfig: BotConfig
 ): Promise<string> {
   const botId = botConfig.id;
+  const sub = action.split(" ").slice(-1)[0];
   const guildId = interaction.guildId;
   const here = interaction.channelId;
   const botName = interaction.guild.members.me?.displayName ?? client.user.displayName;
@@ -636,6 +663,66 @@ async function runAction(
         return "🔒 Only the bot owner can manage her memories.";
       }
       return memoryAction(action, interaction, botId, botName);
+
+    // ---- daily Asylum life ----
+    case "asylum gazette-on":
+    case "asylum diary-on":
+    case "asylum curfew-on": {
+      const kind = sub.split("-")[0] as "gazette" | "diary" | "curfew";
+      const channelId = interaction.options.getChannel("channel")?.id ?? here;
+      const timeInput = kind === "curfew" ? null : interaction.options.getString("time");
+      const time = timeInput ? parseTime(timeInput) : null;
+      if (timeInput && !time) return "I couldn't read that time. Try `8:00am` or `22:30`.";
+      await updateSettings(botId, (s) => {
+        if (kind === "gazette") {
+          s.daily.gazetteChannels[guildId] = channelId;
+          if (time) s.daily.gazetteTime = time;
+        } else if (kind === "diary") {
+          s.daily.diaryChannels[guildId] = channelId;
+          if (time) s.daily.diaryTime = time;
+        } else {
+          s.daily.curfewChannels[guildId] = channelId;
+        }
+      });
+      const d = getSettings(botId).daily;
+      const sleep = getSettings(botId).sleep;
+      if (kind === "gazette") return `📰 The Asylum Gazette will be posted in ${channelMention(channelId)} every day at **${formatTime(d.gazetteTime)}**.${persistNote}`;
+      if (kind === "diary") return `📔 ${botName}'s diary will be posted in ${channelMention(channelId)} every night at **${formatTime(d.diaryTime)}**.${persistNote}`;
+      return (
+        `🌙 Lights-out will be announced in ${channelMention(channelId)} at **${formatTime(sleep.bedtime)}**, and the Warden's night patrol ` +
+        `runs until **${formatTime(sleep.wake)}** (change the times with \`${cmd} sleep set\`).${persistNote}`
+      );
+    }
+    case "asylum gazette-off":
+    case "asylum diary-off":
+    case "asylum curfew-off": {
+      const kind = sub.split("-")[0];
+      await updateSettings(botId, (s) => {
+        if (kind === "gazette") delete s.daily.gazetteChannels[guildId];
+        else if (kind === "diary") delete s.daily.diaryChannels[guildId];
+        else delete s.daily.curfewChannels[guildId];
+      });
+      return `${kind === "gazette" ? "📰 Gazette" : kind === "diary" ? "📔 Diary" : "🌙 Lights-out and the night patrol"} turned off.${persistNote}`;
+    }
+    case "asylum gazette-test":
+    case "asylum diary-test":
+    case "asylum curfew-test": {
+      const channel = interaction.channel;
+      if (!channel) return "I can't post in this channel.";
+      const kind = sub.split("-")[0];
+      if (kind === "gazette") await postGazette(client, botConfig, channel);
+      else if (kind === "diary") await postDiary(client, botConfig, channel);
+      else await postLightsOut(client, botConfig, channel);
+      return "✅ Posted!";
+    }
+    case "asylum ship-on":
+    case "asylum ship-off": {
+      const on = sub === "ship-on";
+      await updateSettings(botId, (s) => {
+        s.shipEnabled = on;
+      });
+      return on ? `🚢 Ship-o-meter is on! Members can say *${botName} ship A and B*.${persistNote}` : `🚢 Ship-o-meter is off.${persistNote}`;
+    }
 
     // ---- reaction GIFs ----
     case "gifs on":
@@ -853,6 +940,10 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
+    `• Asylum Gazette: ${s.daily.gazetteChannels[guildId] ? `${channelMention(s.daily.gazetteChannels[guildId])} at ${formatTime(s.daily.gazetteTime)}` : "off"}`,
+    `• Diary: ${s.daily.diaryChannels[guildId] ? `${channelMention(s.daily.diaryChannels[guildId])} at ${formatTime(s.daily.diaryTime)}` : "off"}`,
+    `• Lights-out & night patrol: ${s.daily.curfewChannels[guildId] ? `${channelMention(s.daily.curfewChannels[guildId])} at ${formatTime(s.sleep.bedtime)}` : "off"}`,
+    `• Ship-o-meter: ${s.shipEnabled ? "on" : "off"}`,
     `• Saved to database: ${isDbReady() ? "yes" : "no (settings reset on restart)"}`,
   ].join("\n");
 }

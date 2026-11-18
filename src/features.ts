@@ -15,6 +15,10 @@ import { rememberFeature } from "./rememberFeature";
 import { storyFeatures } from "./storyGames";
 import { watchlistFeature } from "./watchlist";
 import { weatherFeature } from "./weather";
+import { airingFeature } from "./airing";
+import { funFeatures } from "./fun";
+import { residentFeature } from "./residents";
+import { watchPartyFeature } from "./watchParty";
 
 /** "aurora what's my level?" — shows your affection level with her. */
 const LEVEL = /\b(?:what'?s|whats|what is|show(?: me)?|check)\s+(?:my|our)\s+(?:affection|level|friendship(?: level)?|relationship(?: level)?|bond|streak)\b|\bhow close are we\b/i;
@@ -49,19 +53,23 @@ const levelFeature: Feature = async (ctx) => {
  */
 const FEATURES: Feature[] = [
   animeAlertFeature, // before reminders: "remind me when Frieren airs"
+  watchPartyFeature,
   reminderFeature,
   birthdayFeature,
   rememberFeature,
   ...storyFeatures,
   levelFeature,
+  residentFeature,
   weatherFeature,
   catchUpFeature,
   pollFeature,
   giftFeature,
   ...gameFeatures,
+  ...funFeatures,
   gifFeature,
   watchlistFeature,
   recommendationFeature,
+  airingFeature, // before anime lookup: "what anime is airing today"
   animeFeature,
 ];
 

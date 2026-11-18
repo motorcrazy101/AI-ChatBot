@@ -13,7 +13,7 @@ export type SleepPhase = "asleep" | "waking" | "awake";
 const WAKING_MINUTES = 120;
 
 /** True if `now` is in [start, end), handling ranges that cross midnight. */
-function inRange(now: number, start: number, end: number): boolean {
+export function inRange(now: number, start: number, end: number): boolean {
   if (start === end) return false;
   return start < end ? now >= start && now < end : now >= start || now < end;
 }

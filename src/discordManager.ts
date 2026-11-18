@@ -38,6 +38,10 @@ import { currentPhase } from "./sleep";
 import { addDays, zonedParts } from "./time";
 import { getSettings, settingsLoaded } from "./settings";
 import { welcomeMember } from "./welcome";
+import { nightPatrol, startDailyLoop } from "./asylumLife";
+import { welcomeResident } from "./residents";
+import { award, awardMilestones, knownRoom } from "./residentsData";
+import { startWatchPartyLoop } from "./watchParty";
 import { BotConfig } from "./types";
 
 const activeBots = new Map<string, Client>();
@@ -83,7 +87,10 @@ function isAddressedToBot(message: Message, client: Client<true>, botConfig: Bot
     client.user.globalName ?? "",
     message.guild?.members.me?.displayName ?? "",
   ]);
-  return [...names].some((name) => containsName(message.content, name));
+  // Her name inside `code` or ```code blocks``` doesn't count, so announcements
+  // can mention `Aurora` without her replying.
+  const outsideCode = message.content.replace(/```[\s\S]*?```/g, " ").replace(/`[^`\n]*`/g, " ");
+  return [...names].some((name) => containsName(outsideCode, name));
 }
 
 /** React to a message with a random emoji from the bot's list. */
@@ -126,6 +133,11 @@ async function handleMessage(
   if (!canPostIn(channel)) return;
 
   const user = { id: message.author.id, name: message.member?.displayName ?? message.author.displayName };
+
+  // Lights-out: the Warden's night patrol may catch people chatting after curfew.
+  void nightPatrol(message, client, botConfig, user).catch((err) =>
+    console.warn(`[${botConfig.id}] Night patrol failed:`, (err as Error).message)
+  );
 
   // Trivia guesses ("b", "c"...) can come from anyone in the channel.
   if (await checkTriviaAnswer(message, user.name, botConfig.id)) return;
@@ -181,8 +193,21 @@ async function handleMessage(
   const affection = fromPerson ? await addAffection(botConfig.id, user, "chat") : null;
   if (fromPerson) liftMood(botConfig.id, 1);
 
-  // Daily good morning / good night streaks.
   const extraNotes: string[] = [];
+
+  // Asylum residents: a room on first chat, and the 💖 Inner Circle badge at Best Friend.
+  if (fromPerson) {
+    try {
+      await welcomeResident(botConfig.id, user, channel);
+      const room = knownRoom(botConfig.id, user.id);
+      if (room) extraNotes.push(`(Only if it comes up: ${user.name} lives in Room ${room.room} of the Asylum's ${room.ward}.)`);
+      if (affection && affection.after.level >= 4 && !channel.isDMBased()) await award(botConfig.id, user, "bestfriend", channel);
+    } catch (err) {
+      console.warn(`[${botConfig.id}] Resident update failed:`, (err as Error).message);
+    }
+  }
+
+  // Daily good morning / good night streaks.
   let streakMilestone: number | null = null;
   if (fromPerson && isGreeting(text)) {
     const now = zonedParts();
@@ -191,6 +216,7 @@ async function handleMessage(
     const streak = await checkIn(botConfig.id, user, now.date, yesterday);
     if (streak.counted) {
       liftMood(botConfig.id, 2);
+      await awardMilestones(botConfig.id, user, streak.streak, [[7, "streak7"], [30, "streak30"]], channel.isDMBased() ? null : channel).catch(() => undefined);
       if (streak.milestone) {
         streakMilestone = streak.streak;
         extraNotes.push(
@@ -358,6 +384,8 @@ function buildClient(botConfig: BotConfig, withMembers: boolean, withPresences: 
     startPollLoop(client, botConfig);
     startAnimeAlertLoop(client, botConfig);
     startStoryLoop(client, botConfig);
+    startDailyLoop(client, botConfig);
+    startWatchPartyLoop(client, botConfig);
 
     // Apply the status once saved settings are loaded, then keep it in sync
     // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).

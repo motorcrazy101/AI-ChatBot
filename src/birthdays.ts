@@ -9,6 +9,7 @@ import { canPostIn, generateReply, ReplyChannel, sendText } from "./respond";
 import { getSettings, saveSettings } from "./settings";
 import { daysInMonth, minutesOfDay, MONTHS, zonedParts } from "./time";
 import { BotConfig } from "./types";
+import { award } from "./residentsData";
 
 /**
  * "aurora my birthday is May 5" — she remembers and wishes you a happy
@@ -236,6 +237,7 @@ export const birthdayFeature: Feature = async (ctx) => {
       "React in character in one short sentence, promising to remember it.",
     { embed, fallback: "Saved! I'll remember 🎂", logExtra: `[birthday] ${label(date.month, date.day)}` }
   );
+  await award(ctx.botConfig.id, ctx.user, "birthday", ctx.channel);
   return true;
 };
 

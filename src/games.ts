@@ -1,6 +1,7 @@
 import axios from "axios";
 import { Client, EmbedBuilder, Message } from "discord.js";
-import { addAffection } from "./affection";
+import { addAffection, getAffection } from "./affection";
+import { awardMilestones } from "./residentsData";
 import { logBotPost } from "./chatLog";
 import { EMBED_COLOR, Feature, pick, replyInCharacter, replyPlain } from "./featureKit";
 import { generateReply, ReplyChannel } from "./respond";
@@ -361,6 +362,9 @@ export async function checkTriviaAnswer(message: Message, userName: string, botI
       })
       .catch(() => undefined);
   }
+  const winner = { id: message.author.id, name: userName };
+  const { triviaWins } = await getAffection(game.botConfig.id, winner);
+  await awardMilestones(game.botConfig.id, winner, triviaWins, [[1, "trivia1"], [10, "trivia10"]], game.channel);
   return true;
 }
 

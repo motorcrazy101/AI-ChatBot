@@ -5,6 +5,7 @@ import { EMBED_COLOR, Feature, FeatureContext, pick, replyPlain, truncate } from
 import { createGame, endGame, Game, getGame, saveGame } from "./gameState";
 import { fetchGameChannel, guildOf, openThread, storyText } from "./storyKit";
 import { BotConfig } from "./types";
+import { awardMany, incrementStat } from "./residentsData";
 
 /**
  * Asylum Mystery — a whodunit hosted by Aurora (she plays every suspect).
@@ -167,6 +168,16 @@ async function reveal(client: Client<true>, botConfig: BotConfig, game: Game<Mys
     .addFields({ name: "The culprit", value: `${culprit.emoji} **${culprit.name}** — ${data.motive}` });
   const sent = await channel.send({ embeds: [embed] });
   logBotPost(botConfig.id, client.user.displayName, sent, "game");
+
+  // Everyone who voted for the real culprit is a Master Detective.
+  if (correct && data.voteMessageId) {
+    const voteMessage = await channel.messages.fetch(data.voteMessageId).catch(() => null);
+    const users = await voteMessage?.reactions.cache.get(NUMBER_EMOJIS[data.culprit])?.users.fetch().catch(() => null);
+    const ids = users ? [...users.values()].filter((u) => !u.bot).map((u) => u.id) : [];
+    for (const id of ids) await incrementStat(botConfig.id, id, "detective");
+    const guild = guildOf(channel);
+    await awardMany(botConfig.id, ids, "detective", channel, (id) => guild?.members.cache.get(id)?.displayName ?? users?.get(id)?.displayName ?? "A resident");
+  }
 }
 
 /** Called when the vote timer ends. */

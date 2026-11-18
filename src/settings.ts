@@ -39,6 +39,17 @@ function defaults(): BotSettings {
     confessionChannels: {},
     confessionApproval: true,
     gifs: { enabled: true, chance: 10, intimate: false, meanAccess: [] },
+    daily: {
+      gazetteChannels: {},
+      gazetteTime: "08:00",
+      diaryChannels: {},
+      diaryTime: "22:30",
+      curfewChannels: {},
+      lastGazette: {},
+      lastDiary: {},
+      lastCurfew: {},
+    },
+    shipEnabled: false,
   };
 }
 

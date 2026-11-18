@@ -1,6 +1,7 @@
 import { Client, EmbedBuilder, Message } from "discord.js";
 import { addAffection } from "./affection";
 import { anilist, plainText } from "./anilist";
+import { award, incrementStat } from "./residentsData";
 import { wardenFor } from "./asylum";
 import { logBotPost } from "./chatLog";
 import { EMBED_COLOR, Feature, pick, replyPlain, truncate } from "./featureKit";
@@ -126,7 +127,11 @@ async function reveal(
   if (d.image) embed.setThumbnail(d.image);
   const sent = await channel.send({ embeds: [embed] });
   logBotPost(botConfig.id, client.user.displayName, sent, "game");
-  if (winner) await addAffection(botConfig.id, winner, "trivia");
+  if (winner) {
+    await addAffection(botConfig.id, winner, "trivia");
+    await incrementStat(botConfig.id, winner.id, "secretfile");
+    await award(botConfig.id, winner, "filecracker", channel);
+  }
 }
 
 /** Idle timeout. */

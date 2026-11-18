@@ -156,6 +156,44 @@ const SCHEMA = `
     PRIMARY KEY (bot_id, user_id)
   );
 
+  CREATE TABLE IF NOT EXISTS residents (
+    bot_id  TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    room    INTEGER NOT NULL,
+    ward    TEXT NOT NULL,
+    since   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (bot_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS user_stats (
+    bot_id  TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    key     TEXT NOT NULL,
+    value   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (bot_id, user_id, key)
+  );
+
+  CREATE TABLE IF NOT EXISTS achievements (
+    bot_id    TEXT NOT NULL,
+    user_id   TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    earned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (bot_id, user_id, key)
+  );
+
+  CREATE TABLE IF NOT EXISTS watch_parties (
+    id         BIGSERIAL PRIMARY KEY,
+    bot_id     TEXT NOT NULL,
+    guild_id   TEXT,
+    channel_id TEXT NOT NULL,
+    message_id TEXT,
+    title      TEXT NOT NULL,
+    host_id    TEXT NOT NULL,
+    host_name  TEXT NOT NULL,
+    starts_at  TIMESTAMPTZ NOT NULL,
+    done       BOOLEAN NOT NULL DEFAULT false
+  );
+
   CREATE TABLE IF NOT EXISTS birthdays (
     bot_id           TEXT NOT NULL,
     user_id          TEXT NOT NULL,

@@ -107,6 +107,20 @@ export interface BotSettings {
   confessionChannels: Record<string, string>;
   /** Whether confessions wait for the owner's approval before posting. */
   confessionApproval: boolean;
+  /** Daily Asylum life: Gazette, diary, lights-out. guildId -> channelId. */
+  daily: {
+    gazetteChannels: Record<string, string>;
+    gazetteTime: string;
+    diaryChannels: Record<string, string>;
+    diaryTime: string;
+    curfewChannels: Record<string, string>;
+    /** guildId -> last date ("YYYY-MM-DD") each thing was posted. */
+    lastGazette: Record<string, string>;
+    lastDiary: Record<string, string>;
+    lastCurfew: Record<string, string>;
+  };
+  /** Ship-o-meter (off unless an admin turns it on). */
+  shipEnabled: boolean;
   /** Anime reaction GIFs. */
   gifs: {
     enabled: boolean;

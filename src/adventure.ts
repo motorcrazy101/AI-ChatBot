@@ -14,6 +14,7 @@ import { logBotPost } from "./chatLog";
 import { EMBED_COLOR, Feature, FeatureContext, pick, replyPlain, truncate } from "./featureKit";
 import { createGame, endGame, Game, getCharacter, getGame, saveGame, setCharacter } from "./gameState";
 import { ReplyChannel } from "./respond";
+import { awardMany, incrementStat } from "./residentsData";
 import { fetchGameChannel, guildOf, listWords, openThread, storyText } from "./storyKit";
 import { BotConfig } from "./types";
 
@@ -204,6 +205,12 @@ async function postScene(
     const sent = await channel.send({ embeds: [embed] });
     logBotPost(botConfig.id, client.user.displayName, sent, "game");
     await endGame(game);
+    if (won) {
+      const ids = Object.keys(data.party);
+      for (const id of ids) await incrementStat(botConfig.id, id, "escaped");
+      const guild = guildOf(channel);
+      await awardMany(botConfig.id, ids, "escaped", channel, (id) => guild?.members.cache.get(id)?.displayName ?? data.party[id]);
+    }
     return;
   }
 
