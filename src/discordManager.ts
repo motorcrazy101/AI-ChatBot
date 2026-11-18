@@ -384,8 +384,8 @@ function buildClient(botConfig: BotConfig, withMembers: boolean, withPresences: 
     startPollLoop(client, botConfig);
     startAnimeAlertLoop(client, botConfig);
     startStoryLoop(client, botConfig);
-    startDailyLoop(client, botConfig);
-    startWatchPartyLoop(client, botConfig);
+    startDailyLoop(ready, botConfig);
+    startWatchPartyLoop(ready, botConfig);
 
     // Apply the status once saved settings are loaded, then keep it in sync
     // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).
