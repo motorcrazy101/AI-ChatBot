@@ -6,6 +6,7 @@ import {
   Client,
   EmbedBuilder,
   Message,
+  MessageFlags,
 } from "discord.js";
 import { logBotPost } from "./chatLog";
 import { initDb, isDbReady, pool } from "./db";
@@ -269,7 +270,7 @@ export async function handleConfessionButton(
   const match = interaction.customId.match(/^confess:(approve|reject):(\d+)$/);
   if (!match) return false;
   if (!isOwner(botConfig.id, interaction.user.id)) {
-    await interaction.reply({ content: "🔒 Only the bot owner can review confessions.", ephemeral: true });
+    await interaction.reply({ content: "🔒 Only the bot owner can review confessions.", flags: MessageFlags.Ephemeral });
     return true;
   }
 
@@ -290,7 +291,7 @@ export async function handleConfessionButton(
     } else {
       await interaction.reply({
         content: "⚠️ Couldn't post it — is the confession channel still set, and can she post there?",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
     if (ok) await tellConfessor(client, confession.userId, "🤫 Your confession was posted anonymously!");

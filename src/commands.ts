@@ -3,6 +3,7 @@ import {
   Guild,
   User,
   ChannelType,
+  MessageFlags,
   ChatInputCommandInteraction,
   Client,
   GatewayIntentBits,
@@ -455,7 +456,7 @@ export async function handleCommand(
 ): Promise<void> {
   if (interaction.commandName !== commandName(client)) return;
   if (!interaction.inCachedGuild()) {
-    await interaction.reply({ content: "This only works inside a server.", ephemeral: true });
+    await interaction.reply({ content: "This only works inside a server.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -464,7 +465,7 @@ export async function handleCommand(
   const action = group ? `${group} ${sub}` : sub;
 
   // Stats are shown to everyone in the channel; everything else only to you.
-  await interaction.deferReply({ ephemeral: action !== "stats" });
+  await interaction.deferReply(action === "stats" ? {} : { flags: MessageFlags.Ephemeral });
   const done = async (content: string) => {
     await interaction.editReply({ content: content.slice(0, 2000), allowedMentions: { parse: [] } });
   };
