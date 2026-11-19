@@ -18,6 +18,8 @@ const RECENT_MESSAGES = 30;
 // ---------- owner check ----------
 
 const owners = new Map<string, Set<string>>();
+/** The real owner of the bot application (the team's owner if it belongs to a team). */
+const appOwners = new Map<string, string>();
 
 /** Looks up who owns the bot in the Discord Developer Portal (plus OWNER_IDS). */
 export async function loadOwners(client: Client<true>, botId: string): Promise<void> {
@@ -26,18 +28,28 @@ export async function loadOwners(client: Client<true>, botId: string): Promise<v
     const app = await client.application.fetch();
     const owner = app.owner;
     if (owner) {
-      if ("members" in owner) owner.members.forEach((member) => ids.add(member.id));
-      else ids.add(owner.id);
+      if ("members" in owner) {
+        owner.members.forEach((member) => ids.add(member.id));
+        if (owner.ownerId) appOwners.set(botId, owner.ownerId);
+      } else {
+        ids.add(owner.id);
+        appOwners.set(botId, owner.id);
+      }
     }
   } catch (err) {
     console.warn(`[${botId}] Could not look up the bot owner:`, (err as Error).message);
   }
   owners.set(botId, ids);
-  console.log(`[${botId}] Memory owners: ${[...ids].join(", ") || "none found (set OWNER_IDS)"}`);
+  console.log(`[${botId}] Memory owners: ${[...ids].join(", ") || "none found (set OWNER_IDS)"} · Warden: ${wardenId(botId) ?? "unknown"}`);
 }
 
 export function ownerIds(botId: string): string[] {
   return [...(owners.get(botId) ?? new Set(config.ownerIds))];
+}
+
+/** The one and only Warden: WARDEN_ID, else the bot's owner in the Developer Portal. */
+export function wardenId(botId: string): string | null {
+  return config.wardenId ?? appOwners.get(botId) ?? ownerIds(botId)[0] ?? null;
 }
 
 export function isOwner(botId: string, userId: string): boolean {

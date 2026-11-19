@@ -1,5 +1,5 @@
 import { Guild } from "discord.js";
-import { ownerIds, namesFor } from "./memory";
+import { namesFor, wardenId } from "./memory";
 import { getSettings } from "./settings";
 
 /**
@@ -18,7 +18,7 @@ export interface Warden {
 
 /** The bot's owner, as the Warden (name from the server, nicknames from /aurora memory). */
 export function wardenFor(botId: string, guild: Guild | null): Warden {
-  const id = ownerIds(botId)[0] ?? null;
+  const id = wardenId(botId);
   if (!id) return { id: null, name: "the Warden", nicknames: [] };
   const member = guild?.members.cache.get(id);
   const saved = namesFor(botId, id);

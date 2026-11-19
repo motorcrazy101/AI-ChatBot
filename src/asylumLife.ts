@@ -6,7 +6,7 @@ import { initDb, isDbReady, pool } from "./db";
 import { pick, truncate } from "./featureKit";
 import { prescriptionFor } from "./fun";
 import { allKnownBirthdays } from "./longTermMemory";
-import { isOwner } from "./memory";
+import { wardenId } from "./memory";
 import { currentMood, holidayToday } from "./mood";
 import { awardMilestones, incrementStat } from "./residentsData";
 import { canPostIn, generateReply, ReplyChannel } from "./respond";
@@ -274,7 +274,7 @@ export async function nightPatrol(message: Message, client: Client<true>, botCon
   if (message.author.bot || !message.inGuild()) return;
   const settings = getSettings(botConfig.id);
   if (!settings.daily.curfewChannels[message.guildId]) return;
-  if (isOwner(botConfig.id, user.id)) return;
+  if (user.id === wardenId(botConfig.id)) return; // the Warden is never caught
   const night = nightDate(botConfig.id);
   if (!night) return;
   const key = `${botConfig.id}:${user.id}`;

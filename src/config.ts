@@ -137,6 +137,8 @@ function loadConfig() {
     ownerIds: (process.env.OWNER_IDS ?? "")
       .split(/[\s,]+/)
       .filter((id) => /^\d{15,25}$/.test(id)),
+    /** Discord user ID of the one and only Warden (default: the bot's owner in the Developer Portal). */
+    wardenId: /^\d{15,25}$/.test(process.env.WARDEN_ID?.trim() ?? "") ? process.env.WARDEN_ID!.trim() : null,
     /** Used when someone asks "what's the weather?" without a place. */
     weatherDefaultLocation: process.env.WEATHER_LOCATION?.trim() || "",
   };
