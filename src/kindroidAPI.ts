@@ -37,6 +37,54 @@ export async function callKindroidAI(
   conversation: ConversationMessage[],
   enableFilter = false
 ): Promise<KindroidAIResult> {
+  try {
+    return await requestKindroid(sharedAiCode, conversation, enableFilter);
+  } catch (error) {
+    if (!(error instanceof KindroidError) || error.status === undefined) throw error;
+    // Kindroid sometimes rejects a conversation it doesn't like (fancy names,
+    // very long messages...). Try once more with a smaller, simpler version.
+    const simple = simplifyConversation(conversation);
+    try {
+      const result = await requestKindroid(sharedAiCode, simple, enableFilter);
+      console.warn(`[kindroid] First request was rejected (${error.message}); the simplified retry worked.`);
+      return result;
+    } catch (retryError) {
+      console.error(
+        `[kindroid] Request rejected twice (${error.message}). If this happens on EVERY message, check ` +
+          "SHARED_AI_CODE_1 (it must be a share code from your own account that's still shared) and KINDROID_API_KEY in Railway."
+      );
+      throw retryError;
+    }
+  }
+}
+
+class KindroidError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Last few messages, plain-letter names and shorter texts. */
+export function simplifyConversation(conversation: ConversationMessage[]): ConversationMessage[] {
+  const plainName = (name: string) => {
+    if (name === "{{ai}}" || name === "Server") return name;
+    const cleaned = name.normalize("NFKC").replace(/[^\p{L}\p{N} ._'-]/gu, "").replace(/\s+/g, " ").trim();
+    return (cleaned || "Resident").slice(0, 32);
+  };
+  return conversation.slice(-12).map((m) => ({
+    username: plainName(m.username),
+    text: m.text.length > 1500 ? `${m.text.slice(0, 1499)}…` : m.text,
+    ...(m.timestamp ? { timestamp: m.timestamp } : {}),
+  }));
+}
+
+async function requestKindroid(
+  sharedAiCode: string,
+  conversation: ConversationMessage[],
+  enableFilter: boolean
+): Promise<KindroidAIResult> {
   if (conversation.length === 0) {
     throw new Error("Conversation array cannot be empty");
   }
@@ -58,7 +106,7 @@ export async function callKindroidAI(
     );
 
     if (!data.success || typeof data.reply !== "string") {
-      throw new Error(data.error || "Kindroid API returned no reply");
+      throw new KindroidError(data.error || "Kindroid API returned no reply", 200);
     }
 
     return { type: "success", reply: tidyReply(data.reply) };
@@ -72,8 +120,11 @@ export async function callKindroidAI(
       if (error.code === "ECONNABORTED") {
         throw new Error(`Kindroid API timed out after ${config.requestTimeoutMs}ms`);
       }
-      const detail = error.response?.data?.error ?? error.message;
-      throw new Error(`Kindroid API error${status ? ` (${status})` : ""}: ${detail}`);
+      const body = error.response?.data as unknown;
+      const detail =
+        (body && typeof body === "object" && "error" in body ? String((body as { error: unknown }).error) : null) ??
+        (typeof body === "string" && body ? body.slice(0, 300) : error.message);
+      throw new KindroidError(`Kindroid API error${status ? ` (${status})` : ""}: ${detail}`, status);
     }
     throw error;
   }
