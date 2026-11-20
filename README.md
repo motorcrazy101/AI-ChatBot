@@ -83,7 +83,7 @@ Server Settings → Integrations → the bot.
 | `/aurora memory add` / `nicknames` / `list` / `remove` | Facts she treats as true about people (bot owner only) |
 | `/aurora dm` | Have her DM someone in her own words (bot owner only) |
 | `/aurora replies on` / `off` | Whether replying to her messages makes her answer (per server) |
-| `/aurora confessions on` / `off` / `approval` | Anonymous confessions channel and approval |
+| `/aurora confessions on` / `off` / `approval` / `revoke` | Anonymous confessions channel, approval, and taking one down (owner) |
 | `/aurora mood show` / `set` / `reset` | Her mood today |
 | `/aurora gifs on` / `off` / `chance` | Reaction GIFs and how often she adds random ones |
 | `/aurora gifs intimate` · `grant` · `revoke` · `access` | Owner only: intimate GIFs and who can use the mean ones |
