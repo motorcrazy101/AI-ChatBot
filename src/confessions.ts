@@ -118,7 +118,13 @@ async function markRevoked(c: Confession): Promise<void> {
  * Returns a message for the owner.
  */
 export async function revokeConfession(client: Client<true>, c: Confession): Promise<string> {
-  if (c.status === "revoked") return `Confession #${c.number ?? c.id} was already revoked.`;
+  if (c.status === "revoked") {
+    // Already revoked, but the post might still be up (e.g. an older confession): try again.
+    const removed = c.number ? await findAndDeletePost(client, c) : false;
+    return removed
+      ? `🗑️ Found Confession #${c.number} and deleted its post.`
+      : `Confession #${c.number ?? c.id} was already revoked, and I couldn't find its post anymore.`;
+  }
   if (c.status !== "posted") return `Confession #${c.number ?? c.id} was never posted (it's ${c.status}).`;
   let deleted = false;
   if (c.channelId && c.messageId) {
@@ -126,10 +132,35 @@ export async function revokeConfession(client: Client<true>, c: Confession): Pro
     const message = channel && "messages" in channel ? await channel.messages.fetch(c.messageId).catch(() => null) : null;
     if (message) deleted = await message.delete().then(() => true).catch(() => false);
   }
+  // Older confessions (posted before revoking existed) don't have their post saved,
+  // so look for "Anonymous Confession #N" in the confession channel instead.
+  if (!deleted && c.number) deleted = await findAndDeletePost(client, c);
   await markRevoked(c);
   return deleted
     ? `🗑️ Confession #${c.number ?? c.id} was revoked and its post was deleted.`
     : `🗑️ Confession #${c.number ?? c.id} was revoked, but I couldn't delete the post (it may already be gone). Delete it by hand if it's still there.`;
+}
+
+/** Searches the last 500 messages of the confession channel for this confession's post. */
+async function findAndDeletePost(client: Client<true>, c: Confession): Promise<boolean> {
+  const channelId = c.channelId ?? getSettings(c.botId).confessionChannels[c.guildId];
+  if (!channelId) return false;
+  const channel = (await client.channels.fetch(channelId).catch(() => null)) as ReplyChannel | null;
+  if (!channel || !("messages" in channel)) return false;
+  const title = `Anonymous Confession #${c.number}`;
+  let before: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) }).catch(() => null);
+    if (!batch || batch.size === 0) return false;
+    for (const message of batch.values()) {
+      if (message.author.id !== client.user.id) continue;
+      if (message.embeds.some((e) => e.title?.endsWith(title))) {
+        return message.delete().then(() => true).catch(() => false);
+      }
+    }
+    before = batch.last()?.id;
+  }
+  return false;
 }
 
 /** /aurora confessions revoke <number> (owner only). */
