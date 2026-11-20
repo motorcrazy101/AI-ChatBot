@@ -27,6 +27,7 @@ import { MONTHS, zonedParts } from "./time";
 import { BotConfig, ReplyLength, ScheduleDays, StatusType } from "./types";
 import { welcomeMember } from "./welcome";
 import { postDiary, postGazette, postLightsOut } from "./asylumLife";
+import { revokeConfessionByNumber } from "./confessions";
 
 /**
  * One admin-only slash command per bot, named after the bot (Aurora -> /aurora).
@@ -375,6 +376,14 @@ function buildCommand(name: string, botName: string) {
                 .setDescription("on = owner approves first (safer)")
                 .setRequired(true)
                 .addChoices({ name: "On (recommended)", value: "on" }, { name: "Off", value: "off" })
+            )
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("revoke")
+            .setDescription("Take down a posted confession (bot owner only)")
+            .addIntegerOption((o) =>
+              o.setName("number").setDescription("The confession number, e.g. 12 for Confession #12").setMinValue(1).setRequired(true)
             )
         )
     )
@@ -787,6 +796,10 @@ async function runAction(
         delete s.confessionChannels[guildId];
       });
       return `Confessions turned off in this server.${persistNote}`;
+    case "confessions revoke": {
+      if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can revoke confessions.";
+      return revokeConfessionByNumber(client, botId, guildId, interaction.options.getInteger("number", true));
+    }
     case "confessions approval": {
       const on = interaction.options.getString("state", true) === "on";
       await updateSettings(botId, (s) => {

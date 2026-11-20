@@ -98,6 +98,9 @@ const SCHEMA = `
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
 
+  ALTER TABLE confessions ADD COLUMN IF NOT EXISTS channel_id TEXT;
+  ALTER TABLE confessions ADD COLUMN IF NOT EXISTS message_id TEXT;
+
   CREATE TABLE IF NOT EXISTS polls (
     id         BIGSERIAL PRIMARY KEY,
     bot_id     TEXT NOT NULL,

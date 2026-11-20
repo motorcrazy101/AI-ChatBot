@@ -33,8 +33,11 @@ interface Confession {
   guildId: string;
   userId: string;
   text: string;
-  status: "pending" | "posted" | "rejected";
+  status: "pending" | "posted" | "rejected" | "revoked";
   number?: number;
+  /** Where the posted confession is, so it can be taken down again. */
+  channelId?: string | null;
+  messageId?: string | null;
 }
 
 const memory = new Map<number, Confession>();
@@ -63,11 +66,77 @@ async function load(id: number): Promise<Confession | null> {
   if (pool && (await useDb())) {
     const { rows } = await pool.query("SELECT * FROM confessions WHERE id = $1", [id]);
     const r = rows[0];
-    return r
-      ? { id: Number(r.id), botId: r.bot_id, guildId: r.guild_id, userId: r.user_id, text: r.text, status: r.status }
-      : null;
+    return r ? fromRow(r) : null;
   }
   return memory.get(id) ?? null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromRow(r: any): Confession {
+  return {
+    id: Number(r.id),
+    botId: r.bot_id,
+    guildId: r.guild_id,
+    userId: r.user_id,
+    text: r.text,
+    status: r.status,
+    number: r.number ?? undefined,
+    channelId: r.channel_id ?? null,
+    messageId: r.message_id ?? null,
+  };
+}
+
+/** A posted confession by its public number in a server. */
+async function loadByNumber(botId: string, guildId: string, number: number): Promise<Confession | null> {
+  if (pool && (await useDb())) {
+    const { rows } = await pool.query(
+      "SELECT * FROM confessions WHERE bot_id = $1 AND guild_id = $2 AND number = $3 ORDER BY id DESC LIMIT 1",
+      [botId, guildId, number]
+    );
+    return rows[0] ? fromRow(rows[0]) : null;
+  }
+  return [...memory.values()].find((c) => c.botId === botId && c.guildId === guildId && c.number === number) ?? null;
+}
+
+async function savePostedMessage(c: Confession, channelId: string, messageId: string): Promise<void> {
+  c.channelId = channelId;
+  c.messageId = messageId;
+  if (memory.has(c.id)) memory.set(c.id, c);
+  if (pool && (await useDb())) {
+    await pool.query("UPDATE confessions SET channel_id = $2, message_id = $3 WHERE id = $1", [c.id, channelId, messageId]);
+  }
+}
+
+async function markRevoked(c: Confession): Promise<void> {
+  c.status = "revoked";
+  if (memory.has(c.id)) memory.set(c.id, c);
+  if (pool && (await useDb())) await pool.query("UPDATE confessions SET status = 'revoked' WHERE id = $1", [c.id]);
+}
+
+/**
+ * Takes a posted confession down: deletes the post and marks it revoked.
+ * Returns a message for the owner.
+ */
+export async function revokeConfession(client: Client<true>, c: Confession): Promise<string> {
+  if (c.status === "revoked") return `Confession #${c.number ?? c.id} was already revoked.`;
+  if (c.status !== "posted") return `Confession #${c.number ?? c.id} was never posted (it's ${c.status}).`;
+  let deleted = false;
+  if (c.channelId && c.messageId) {
+    const channel = (await client.channels.fetch(c.channelId).catch(() => null)) as ReplyChannel | null;
+    const message = channel && "messages" in channel ? await channel.messages.fetch(c.messageId).catch(() => null) : null;
+    if (message) deleted = await message.delete().then(() => true).catch(() => false);
+  }
+  await markRevoked(c);
+  return deleted
+    ? `🗑️ Confession #${c.number ?? c.id} was revoked and its post was deleted.`
+    : `🗑️ Confession #${c.number ?? c.id} was revoked, but I couldn't delete the post (it may already be gone). Delete it by hand if it's still there.`;
+}
+
+/** /aurora confessions revoke <number> (owner only). */
+export async function revokeConfessionByNumber(client: Client<true>, botId: string, guildId: string, number: number): Promise<string> {
+  const c = await loadByNumber(botId, guildId, number);
+  if (!c) return `I couldn't find confession #${number} in this server.`;
+  return revokeConfession(client, c);
 }
 
 /** Marks it posted/rejected; returns the public confession number when posted. */
@@ -84,6 +153,7 @@ async function setStatus(c: Confession, status: "posted" | "rejected"): Promise<
     return rows[0]?.number ?? c.id;
   }
   c.status = status;
+  memory.set(c.id, c);
   if (status === "posted") {
     c.number = [...memory.values()].filter((x) => x.guildId === c.guildId && x.status === "posted").length;
   }
@@ -116,6 +186,8 @@ async function post(client: Client<true>, botConfig: BotConfig, c: Confession): 
     .setFooter({ text: `DM ${client.user.displayName} "I want to confess" to send your own` });
   const sent = await channel.send({ content: comment?.slice(0, 1800) ?? "", embeds: [embed], allowedMentions: { parse: [] } });
   logBotPost(botConfig.id, client.user.displayName, sent, "game");
+  c.number = number;
+  await savePostedMessage(c, channel.id, sent.id);
   return true;
 }
 
@@ -267,7 +339,7 @@ export async function handleConfessionButton(
   client: Client<true>,
   botConfig: BotConfig
 ): Promise<boolean> {
-  const match = interaction.customId.match(/^confess:(approve|reject):(\d+)$/);
+  const match = interaction.customId.match(/^confess:(approve|reject|revoke):(\d+)$/);
   if (!match) return false;
   if (!isOwner(botConfig.id, interaction.user.id)) {
     await interaction.reply({ content: "🔒 Only the bot owner can review confessions.", flags: MessageFlags.Ephemeral });
@@ -279,6 +351,11 @@ export async function handleConfessionButton(
     await interaction.update({ content: "This confession no longer exists.", components: [] });
     return true;
   }
+  if (match[1] === "revoke") {
+    const result = await revokeConfession(client, confession);
+    await interaction.update({ content: result, components: [] });
+    return true;
+  }
   if (confession.status !== "pending") {
     await interaction.update({ content: `Already ${confession.status}.`, components: [] });
     return true;
@@ -287,7 +364,13 @@ export async function handleConfessionButton(
   if (match[1] === "approve") {
     const ok = await post(client, botConfig, confession);
     if (ok) {
-      await interaction.update({ content: "✅ Approved and posted.", components: [] });
+      const revoke = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`confess:revoke:${confession.id}`).setLabel("Revoke (take it down)").setStyle(ButtonStyle.Secondary)
+      );
+      await interaction.update({
+        content: `✅ Approved and posted as **Confession #${confession.number ?? confession.id}**. Approved by mistake? Press Revoke.`,
+        components: [revoke.toJSON() as never],
+      });
     } else {
       await interaction.reply({
         content: "⚠️ Couldn't post it — is the confession channel still set, and can she post there?",
