@@ -55,19 +55,19 @@ function fail(message: string): never {
 }
 
 /**
- * Reads SHARED_AI_CODE_N / BOT_TOKEN_N pairs starting at N=1 and stops at the
- * first number where both are missing. A half-filled pair is a config error.
+ * Reads SHARED_AI_CODE_N / BOT_TOKEN_N pairs for N = 1 to 20 (gaps are fine,
+ * e.g. a service with only _2). A half-filled pair is a config error.
  */
 function loadBotConfigs(): BotConfig[] {
   const configs: BotConfig[] = [];
 
-  for (let i = 1; ; i++) {
+  for (let i = 1; i <= 20; i++) {
     const sharedAiCode = process.env[`SHARED_AI_CODE_${i}`]?.trim();
     const botToken = process.env[`BOT_TOKEN_${i}`]?.trim();
 
-    if (!sharedAiCode && !botToken) break;
+    if (!sharedAiCode && !botToken) continue;
     if (!sharedAiCode || !botToken) {
-      fail(`Bot ${i} needs both SHARED_AI_CODE_${i} and BOT_TOKEN_${i}`);
+      fail(`Bot ${i} needs both SHARED_AI_CODE_${i} and BOT_TOKEN_${i} (only one of them is set)`);
     }
 
     configs.push({
@@ -90,7 +90,11 @@ function loadConfig() {
 
   const bots = loadBotConfigs();
   if (bots.length === 0) {
-    fail("No bots configured. Set at least SHARED_AI_CODE_1 and BOT_TOKEN_1");
+    const seen = Object.keys(process.env).filter((k) => /^(SHARED_AI_CODE|BOT_TOKEN)/i.test(k));
+    fail(
+      "No bots configured. Set SHARED_AI_CODE_1 and BOT_TOKEN_1 in this service's Variables." +
+        (seen.length ? ` (Found these similar names instead: ${seen.join(", ")} — check the spelling.)` : " (No SHARED_AI_CODE / BOT_TOKEN variables were found in this service at all.)")
+    );
   }
 
   let timezone = process.env.TIMEZONE?.trim() || "America/Los_Angeles";
