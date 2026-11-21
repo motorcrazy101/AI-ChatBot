@@ -239,6 +239,24 @@ function buildCommand(name: string, botName: string) {
     )
     .addSubcommandGroup((g) =>
       g
+        .setName("names")
+        .setDescription("Extra names she answers to, like a short nickname (bot owner only)")
+        .addSubcommand((s) =>
+          s
+            .setName("add")
+            .setDescription("Add a name she answers to (owner only)")
+            .addStringOption((o) => o.setName("name").setDescription("e.g. katy").setMaxLength(32).setRequired(true))
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("remove")
+            .setDescription("Remove one of her extra names (owner only)")
+            .addStringOption((o) => o.setName("name").setDescription("The name to remove").setMaxLength(32).setRequired(true))
+        )
+        .addSubcommand((s) => s.setName("list").setDescription("Show the names she answers to"))
+    )
+    .addSubcommandGroup((g) =>
+      g
         .setName("replies")
         .setDescription("Whether replying to her messages makes her answer (this server)")
         .addSubcommand((s) => s.setName("on").setDescription("Replying to her messages makes her answer"))
@@ -454,6 +472,12 @@ export async function registerCommands(client: Client<true>, botConfig: BotConfi
 }
 
 const channelMention = (id: string) => `<#${id}>`;
+
+/** Words too common to use as one of her names. */
+const COMMON_WORDS = new Set([
+  "nurse", "bot", "hi", "hey", "hello", "yo", "the", "and", "you", "me", "lol", "ok", "okay", "yes", "no",
+  "girl", "boy", "babe", "baby", "bro", "sis", "dude", "warden", "everyone", "anime", "miss", "mrs", "mr", "lady",
+]);
 const userMention = (id: string) => `<@${id}>`;
 
 const EMOJI_PATTERN = /^(<a?:\w+:\d+>|(?=.*\p{Extended_Pictographic})[\p{Extended_Pictographic}\p{Emoji_Component}‍️]+)$/u;
@@ -831,6 +855,43 @@ async function runAction(
       refreshPresence(client, botConfig, true);
       return `${botName} is back to her natural mood for today: **${currentMood(botId).mood.key}**.`;
 
+    // ---- extra names ----
+    case "names list": {
+      const aliases = getSettings(botId).aliases;
+      return (
+        `**${botName} answers to:** her name, an @mention, replies to her${aliases.length ? `, and ${aliases.map((a) => `**${a}**`).join(", ")}` : ""}.\n` +
+        "-# Extra names work for people; other bots need her full name or an @mention."
+      );
+    }
+    case "names add":
+    case "names remove": {
+      if (!isOwner(botId, interaction.user.id)) return "🔒 Only the bot owner can change her names.";
+      const name = interaction.options.getString("name", true).replace(/^@/, "").replace(/\s+/g, " ").trim();
+      if (sub === "remove") {
+        let removed = false;
+        await updateSettings(botId, (s) => {
+          const before = s.aliases.length;
+          s.aliases = s.aliases.filter((a) => a.toLowerCase() !== name.toLowerCase());
+          removed = s.aliases.length < before;
+        });
+        return removed ? `Removed **${name}**. ${botName} won't answer to it anymore.${persistNote}` : `**${name}** isn't one of her extra names.`;
+      }
+      if (name.length < 2) return "That name is too short. Use at least 2 letters.";
+      if (COMMON_WORDS.has(name.toLowerCase())) {
+        return `**${name}** is too common, so ${botName} would answer to tons of normal messages. Pick something more unique.`;
+      }
+      if (getSettings(botId).aliases.some((a) => a.toLowerCase() === name.toLowerCase())) return `${botName} already answers to **${name}**.`;
+      if (getSettings(botId).aliases.length >= 10) return "She already has 10 extra names. Remove one first.";
+      const otherBot = config.bots.find((b) => b.id !== botId && getSettings(b.id).aliases.some((a) => a.toLowerCase() === name.toLowerCase()));
+      await updateSettings(botId, (s) => {
+        s.aliases.push(name);
+      });
+      return (
+        `✅ ${botName} now answers to **${name}** too (e.g. "${name}, how are you?").${persistNote}` +
+        (otherBot ? `\n⚠️ Another one of your bots also answers to **${name}**, so both will reply to it.` : "")
+      );
+    }
+
     // ---- replies ----
     case "replies on":
       await updateSettings(botId, (s) => toggleInList(s.repliesOffGuilds, guildId, false));
@@ -950,6 +1011,7 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Mood today: ${currentMood(botConfig.id).mood.emoji} ${currentMood(botConfig.id).mood.key}`,
     `• Confessions: ${s.confessionChannels[guildId] ? `${channelMention(s.confessionChannels[guildId])} (${s.confessionApproval ? "owner approves" : "no approval"})` : "off"}`,
     `• Reaction GIFs: ${s.gifs.enabled ? `on · ${s.gifs.chance}% random · intimate ${s.gifs.intimate ? "on" : "off"} · mean access: owner${s.gifs.meanAccess.length ? ` + ${s.gifs.meanAccess.length}` : ""}` : "off"}`,
+    `• Extra names: ${s.aliases.length ? s.aliases.join(", ") : "none"}`,
     `• Answers replies to her messages: ${s.repliesOffGuilds.includes(guildId) ? "off" : "on"}`,
     `• Reply length: ${s.replyLength}`,
     `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,

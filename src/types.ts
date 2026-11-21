@@ -97,6 +97,8 @@ export interface BotSettings {
   nextMemoryId: number;
   /** userId -> other names people use for them, e.g. ["douche"]. */
   nicknames: Record<string, string[]>;
+  /** Extra names she answers to, e.g. ["katy"] for "Nurse Katy" (people only, not other bots). */
+  aliases: string[];
   /** Servers where replying to her messages doesn't make her answer. */
   repliesOffGuilds: string[];
   /** A mood forced with /aurora mood set, for one day ("YYYY-MM-DD"). */

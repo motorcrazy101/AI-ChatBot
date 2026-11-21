@@ -86,6 +86,8 @@ function isAddressedToBot(message: Message, client: Client<true>, botConfig: Bot
     client.user.username,
     client.user.globalName ?? "",
     message.guild?.members.me?.displayName ?? "",
+    // Short names ("katy") work for people; other bots need her full name or an @mention.
+    ...(message.author.bot ? [] : getSettings(botConfig.id).aliases),
   ]);
   // Her name inside `code` or ```code blocks``` doesn't count, so announcements
   // can mention `Aurora` without her replying.
@@ -144,7 +146,8 @@ async function handleMessage(
 
   const addressed = isAddressedToBot(message, client, botConfig);
   const botName = botDisplayName(client, channel);
-  const text = stripBotName(message.cleanContent, [client.user.username, client.user.globalName ?? "", botName]);
+  const myNames = [client.user.username, client.user.globalName ?? "", botName, ...settings.aliases];
+  const text = stripBotName(message.cleanContent, myNames);
 
   // Story games (adventure votes, Secret File questions, logbook lines, roleplay
   // scenes) react to messages in their thread even without her name.
@@ -268,7 +271,7 @@ async function handleMessage(
     ? planIncomingGif(
         botConfig.id,
         message.content,
-        [client.user.username, client.user.globalName ?? "", botName],
+        myNames,
         user,
         affection?.after.level ?? 0
       )
