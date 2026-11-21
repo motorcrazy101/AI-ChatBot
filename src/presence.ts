@@ -86,7 +86,14 @@ export function currentStatus(botConfig: BotConfig): StatusSetting {
 export function refreshPresence(client: Client<true>, botConfig: BotConfig, force = false): void {
   const status = currentStatus(botConfig);
   const signature = `${status.type}:${status.text}`;
-  if (!force && lastApplied.get(botConfig.id) === signature) return;
+  const changed = lastApplied.get(botConfig.id) !== signature;
+  if (!force && !changed) return;
   lastApplied.set(botConfig.id, signature);
-  applyStatus(client, status);
+  if (changed) console.log(`[${botConfig.id}] Status → ${describeStatus(status)}`);
+  try {
+    applyStatus(client, status);
+  } catch (err) {
+    lastApplied.delete(botConfig.id); // try again next minute
+    console.warn(`[${botConfig.id}] Could not update status:`, (err as Error).message);
+  }
 }

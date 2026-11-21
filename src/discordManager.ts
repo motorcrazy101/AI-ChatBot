@@ -393,9 +393,18 @@ function buildClient(botConfig: BotConfig, withMembers: boolean, withPresences: 
     // Apply the status once saved settings are loaded, then keep it in sync
     // with the sleep schedule (😴 Sleeping at night, ☕ Just woke up...).
     void settingsLoaded().then(() => refreshPresence(ready, botConfig, true));
+    // Check every minute; every 10 minutes re-send it anyway, because Discord
+    // can drop a bot's status after a reconnect.
+    let ticks = 0;
     setInterval(() => {
-      if (client.isReady()) refreshPresence(client, botConfig);
+      ticks++;
+      if (client.isReady()) refreshPresence(client, botConfig, ticks % 10 === 0);
     }, 60_000).unref();
+  });
+
+  // After a reconnect, put her status back right away.
+  client.on("shardResume", () => {
+    if (client.isReady()) refreshPresence(client, botConfig, true);
   });
 
   client.on("messageCreate", (message) => {
