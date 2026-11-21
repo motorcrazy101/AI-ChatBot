@@ -18,7 +18,7 @@ import { levelFor, topAffection } from "./affection";
 import { allBirthdays } from "./birthdays";
 import { isOwner, MAX_FACT_LENGTH, MAX_MEMORIES } from "./memory";
 import { currentMood, moodByKey, MOODS } from "./mood";
-import { describeStatus, parseStatus, refreshPresence } from "./presence";
+import { currentStatus, describeStatus, parseStatus, refreshPresence } from "./presence";
 import { generateReply, sendText } from "./respond";
 import { DAY_LABELS, formatTime, parseTime, runScheduledPost } from "./scheduler";
 import { getSettings, toggleInList, updateSettings } from "./settings";
@@ -1014,7 +1014,9 @@ function describeSettings(botConfig: BotConfig, guildId: string, cmd: string): s
     `• Extra names: ${s.aliases.length ? s.aliases.join(", ") : "none"}`,
     `• Answers replies to her messages: ${s.repliesOffGuilds.includes(guildId) ? "off" : "on"}`,
     `• Reply length: ${s.replyLength}`,
-    `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"}`,
+    `• Sleep schedule: ${s.sleep.enabled ? `${formatTime(s.sleep.bedtime)}–${formatTime(s.sleep.wake)}` : "off"} · ` +
+      `her clock says **${formatTime(zonedParts().time)}** (${config.timezone}), so she's **${currentPhase(botConfig.id)}** · ` +
+      `status: ${describeStatus(currentStatus(botConfig))}`,
     `• Birthday channel: ${s.birthdayChannels[guildId] ? channelMention(s.birthdayChannels[guildId]) : "none (DMs)"}`,
     `• Asylum Gazette: ${s.daily.gazetteChannels[guildId] ? `${channelMention(s.daily.gazetteChannels[guildId])} at ${formatTime(s.daily.gazetteTime)}` : "off"}`,
     `• Diary: ${s.daily.diaryChannels[guildId] ? `${channelMention(s.daily.diaryChannels[guildId])} at ${formatTime(s.daily.diaryTime)}` : "off"}`,
