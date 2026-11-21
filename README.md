@@ -82,6 +82,7 @@ Server Settings → Integrations → the bot.
 | `/aurora schedule add` / `list` / `remove` / `test` | Scheduled posts |
 | `/aurora memory add` / `nicknames` / `list` / `remove` | Facts she treats as true about people (bot owner only) |
 | `/aurora dm` | Have her DM someone in her own words (bot owner only) |
+| `/aurora names add` / `remove` / `list` | Extra names she answers to, e.g. `katy` for "Nurse Katy" (bot owner only; people only, not other bots) |
 | `/aurora replies on` / `off` | Whether replying to her messages makes her answer (per server) |
 | `/aurora confessions on` / `off` / `approval` / `revoke` | Anonymous confessions channel, approval, and taking one down (owner) |
 | `/aurora mood show` / `set` / `reset` | Her mood today |
